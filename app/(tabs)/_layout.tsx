@@ -1,6 +1,7 @@
 import { Tabs, Redirect } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, StyleSheet } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -11,7 +12,6 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
 
-  // 🔥 Kiểm tra trạng thái login khi app mở
   useEffect(() => {
     const checkAuth = async () => {
       const token = await AsyncStorage.getItem('userToken');
@@ -20,35 +20,59 @@ export default function TabLayout() {
     checkAuth();
   }, []);
 
-  // 🔄 Chưa load xong thì chưa render
   if (isLoggedIn === null) return null;
 
-  // 🚪 Chưa login → chuyển về screen /login
-  if (!isLoggedIn) return <Redirect href="/login" />;
+  if (!isLoggedIn) {
+    return <Redirect href="/login" />;
+  }
 
-  // ✔ Login rồi → hiện Tabs
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
-      />
+    <View style={styles.container}>
+      <View style={styles.phoneFrame}>
+        <Tabs
+          screenOptions={{
+            tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+            headerShown: false,
+            tabBarButton: HapticTab,
+          }}
+        >
+          <Tabs.Screen
+            name="index"
+            options={{
+              title: 'Home',
+              tabBarIcon: ({ color }) => (
+                <IconSymbol size={28} name="house.fill" color={color} />
+              ),
+            }}
+          />
 
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
-    </Tabs>
+          <Tabs.Screen
+            name="explore"
+            options={{
+              title: 'Explore',
+              tabBarIcon: ({ color }) => (
+                <IconSymbol size={28} name="paperplane.fill" color={color} />
+              ),
+            }}
+          />
+        </Tabs>
+      </View>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E8E8E8',
+  },
+  phoneFrame: {
+    width: 390,
+    height: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+});

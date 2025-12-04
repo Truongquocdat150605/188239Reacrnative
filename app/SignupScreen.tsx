@@ -7,9 +7,12 @@ import {
     ScrollView,
     StyleSheet,
     Alert,
+    ActivityIndicator,
 } from 'react-native';
 import { User, Eye, EyeOff, Check, X } from 'lucide-react-native';
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router"; // Thêm useRouter
+import { addUser } from '../lib/users';
+import { saveUserSession } from "../utils/auth";
 interface ValidationErrors {
     name?: string;
     email?: string;
@@ -23,6 +26,22 @@ interface PasswordStrength {
     color: string;
 }
 
+// Password Requirement Component
+function PasswordRequirement({ met, text }: { met: boolean; text: string }) {
+    return (
+        <View style={styles.requirement}>
+            {met ? (
+                <Check size={12} color="#10B981" />
+            ) : (
+                <X size={12} color="#9CA3AF" />
+            )}
+            <Text style={[styles.requirementText, met && styles.requirementMet]}>
+                {text}
+            </Text>
+        </View>
+    );
+}
+
 export default function SignupScreen() {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
@@ -33,11 +52,14 @@ export default function SignupScreen() {
     const [agreeToTerms, setAgreeToTerms] = useState(false);
     const [errors, setErrors] = useState<ValidationErrors>({});
     const [touched, setTouched] = useState<Record<string, boolean>>({});
+    const [isLoading, setIsLoading] = useState<boolean>(false); // NEW: State loading
     const [passwordStrength, setPasswordStrength] = useState<PasswordStrength>({
         score: 0,
         label: '',
         color: '',
     });
+
+    const router = useRouter(); // Khởi tạo router
 
     // Validate email
     const validateEmail = (email: string): boolean => {
@@ -71,7 +93,7 @@ export default function SignupScreen() {
         setPasswordStrength(calculatePasswordStrength(password));
     }, [password]);
 
-    // Validate form
+    // Validate form (Dùng khi nhấn nút)
     const validateForm = (): boolean => {
         const newErrors: ValidationErrors = {};
 
@@ -87,20 +109,24 @@ export default function SignupScreen() {
             newErrors.email = 'Email không đúng định dạng';
         }
 
-        if (!password) {
-            newErrors.password = 'Vui lòng nhập mật khẩu';
-        } else {
-            const issues = [];
-            if (password.length < 8) issues.push('ít nhất 8 ký tự');
-            if (!/[a-z]/.test(password)) issues.push('chữ thường');
-            if (!/[A-Z]/.test(password)) issues.push('chữ hoa');
-            if (!/[0-9]/.test(password)) issues.push('số');
-            if (!/[^a-zA-Z0-9]/.test(password)) issues.push('ký tự đặc biệt');
+        const issues = [];
+        if (password.length < 8) issues.push('ít nhất 8 ký tự');
+        if (!/[a-z]/.test(password)) issues.push('chữ thường');
+        if (!/[A-Z]/.test(password)) issues.push('chữ hoa');
+        if (!/[0-9]/.test(password)) issues.push('số');
+        if (!/[^a-zA-Z0-9]/.test(password)) issues.push('ký tự đặc biệt');
 
-            if (issues.length > 0) {
-                newErrors.password = `Cần có: ${issues.join(', ')}`;
+        if (issues.length > 0) {
+            // Chỉ hiển thị lỗi này nếu người dùng đã nhập nhưng chưa đáp ứng yêu cầu
+            if (password.length > 0) {
+                newErrors.password = `Mật khẩu chưa đáp ứng yêu cầu.`;
+            } else {
+                newErrors.password = 'Vui lòng nhập mật khẩu';
             }
+        } else if (!password) {
+            newErrors.password = 'Vui lòng nhập mật khẩu';
         }
+
 
         if (!confirmPassword) {
             newErrors.confirmPassword = 'Vui lòng xác nhận mật khẩu';
@@ -112,30 +138,40 @@ export default function SignupScreen() {
         return Object.keys(newErrors).length === 0;
     };
 
-    const handleSignup = () => {
-        setTouched({
-            name: true,
-            email: true,
-            password: true,
-            confirmPassword: true,
-        });
+  const handleSignup = async () => {
+    setTouched({ name: true, email: true, password: true, confirmPassword: true });
 
-        if (!agreeToTerms) {
-            Alert.alert('Thông báo', 'Vui lòng đồng ý với Điều khoản & Điều kiện');
-            return;
-        }
+    if (!agreeToTerms) {
+        Alert.alert('Lỗi', 'Vui lòng đồng ý với Điều khoản & Điều kiện');
+        return;
+    }
 
-        if (validateForm()) {
-            Alert.alert('Thành công', 'Đăng ký thành công! 🎉');
-            console.log('Đăng ký:', { name, email, password });
-        }
-    };
+    if (validateForm()) {
+        setIsLoading(true);
+
+        setTimeout(async () => { // <-- thêm async
+            setIsLoading(false);
+
+            const newUser = {
+                email: email.toLowerCase(),
+                password: password,
+                name: name,
+            };
+
+            addUser(newUser);
+
+            await saveUserSession(newUser); // <-- giờ dùng được await
+
+            router.replace('/login'); // chuyển qua Home sau khi đăng ký thành công
+        }, 1500);
+    }
+};
 
     const handleSocialSignup = (provider: string) => {
         Alert.alert('Thông báo', `Đăng ký bằng ${provider}`);
     };
 
-    // Real-time validation
+    // Real-time validation cho Name
     useEffect(() => {
         if (touched.name) {
             const newErrors = { ...errors };
@@ -150,6 +186,7 @@ export default function SignupScreen() {
         }
     }, [name, touched.name]);
 
+    // Real-time validation cho Email
     useEffect(() => {
         if (touched.email) {
             const newErrors = { ...errors };
@@ -164,6 +201,7 @@ export default function SignupScreen() {
         }
     }, [email, touched.email]);
 
+    // Real-time validation cho Confirm Password
     useEffect(() => {
         if (touched.confirmPassword && confirmPassword) {
             const newErrors = { ...errors };
@@ -176,8 +214,31 @@ export default function SignupScreen() {
         }
     }, [password, confirmPassword, touched.confirmPassword]);
 
+    // Real-time validation cho Password (để xóa lỗi khi người dùng sửa lỗi)
+    useEffect(() => {
+        if (touched.password && password.length > 0) {
+            const newErrors = { ...errors };
+            const issues = [];
+            if (password.length < 8) issues.push('ít nhất 8 ký tự');
+            if (!/[a-z]/.test(password)) issues.push('chữ thường');
+            if (!/[A-Z]/.test(password)) issues.push('chữ hoa');
+            if (!/[0-9]/.test(password)) issues.push('số');
+            if (!/[^a-zA-Z0-9]/.test(password)) issues.push('ký tự đặc biệt');
+
+            if (issues.length === 0) {
+                delete newErrors.password;
+            }
+            setErrors(newErrors);
+        }
+    }, [password, touched.password]);
+
+
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+            style={styles.container}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+        >
             {/* Logo */}
             <View style={styles.logoBox}>
                 <View style={styles.logoInner}>
@@ -194,9 +255,11 @@ export default function SignupScreen() {
                 <TextInput
                     style={[styles.input, touched.name && errors.name && styles.inputError]}
                     placeholder="Họ và Tên"
+                    placeholderTextColor="#999"
                     value={name}
                     onChangeText={setName}
                     onBlur={() => setTouched({ ...touched, name: true })}
+                    editable={!isLoading}
                 />
                 {touched.name && errors.name && (
                     <View style={styles.errorContainer}>
@@ -211,11 +274,13 @@ export default function SignupScreen() {
                 <TextInput
                     style={[styles.input, touched.email && errors.email && styles.inputError]}
                     placeholder="Email"
+                    placeholderTextColor="#999"
                     value={email}
                     onChangeText={setEmail}
                     onBlur={() => setTouched({ ...touched, email: true })}
                     keyboardType="email-address"
                     autoCapitalize="none"
+                    editable={!isLoading}
                 />
                 {touched.email && errors.email && (
                     <View style={styles.errorContainer}>
@@ -227,19 +292,23 @@ export default function SignupScreen() {
 
             {/* Password Input */}
             <View style={styles.inputContainer}>
-                <View style={styles.passwordContainer}>
+                <View
+                    style={[
+                        styles.passwordContainer,
+                        touched.password && errors.password && styles.inputError
+                    ]}
+                >
                     <TextInput
-                        style={[
-                            styles.inputPassword,
-                            touched.password && errors.password && styles.inputError,
-                        ]}
+                        style={styles.inputPassword}
                         placeholder="Mật khẩu"
+                        placeholderTextColor="#999"
                         secureTextEntry={!showPassword}
                         value={password}
                         onChangeText={setPassword}
                         onBlur={() => setTouched({ ...touched, password: true })}
+                        editable={!isLoading}
                     />
-                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)} disabled={isLoading}>
                         {showPassword ? <EyeOff size={22} color="#777" /> : <Eye size={22} color="#777" />}
                     </TouchableOpacity>
                 </View>
@@ -282,23 +351,33 @@ export default function SignupScreen() {
                         text="Có ký tự đặc biệt"
                     />
                 </View>
+                {touched.password && errors.password && (
+                    <View style={styles.errorContainer}>
+                        <X size={14} color="#EF4444" />
+                        <Text style={styles.errorText}>{errors.password}</Text>
+                    </View>
+                )}
             </View>
 
             {/* Confirm Password Input */}
             <View style={styles.inputContainer}>
-                <View style={styles.passwordContainer}>
+                <View
+                    style={[
+                        styles.passwordContainer,
+                        touched.confirmPassword && errors.confirmPassword && styles.inputError,
+                    ]}
+                >
                     <TextInput
-                        style={[
-                            styles.inputPassword,
-                            touched.confirmPassword && errors.confirmPassword && styles.inputError,
-                        ]}
+                        style={styles.inputPassword}
                         placeholder="Xác nhận mật khẩu"
+                        placeholderTextColor="#999"
                         secureTextEntry={!showConfirmPassword}
                         value={confirmPassword}
                         onChangeText={setConfirmPassword}
                         onBlur={() => setTouched({ ...touched, confirmPassword: true })}
+                        editable={!isLoading}
                     />
-                    <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                    <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} disabled={isLoading}>
                         {showConfirmPassword ? (
                             <EyeOff size={22} color="#777" />
                         ) : (
@@ -312,7 +391,7 @@ export default function SignupScreen() {
                         <Text style={styles.errorText}>{errors.confirmPassword}</Text>
                     </View>
                 )}
-                {confirmPassword &&
+                {confirmPassword.length > 0 &&
                     !errors.confirmPassword &&
                     password === confirmPassword && (
                         <View style={styles.successContainer}>
@@ -327,6 +406,7 @@ export default function SignupScreen() {
                 style={styles.checkboxContainer}
                 onPress={() => setAgreeToTerms(!agreeToTerms)}
                 activeOpacity={0.7}
+                disabled={isLoading}
             >
                 <View style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}>
                     {agreeToTerms && <Check size={14} color="#fff" />}
@@ -337,8 +417,16 @@ export default function SignupScreen() {
             </TouchableOpacity>
 
             {/* Signup Button */}
-            <TouchableOpacity style={styles.button} onPress={handleSignup}>
-                <Text style={styles.buttonText}>Đăng Ký</Text>
+            <TouchableOpacity
+                style={[styles.button, isLoading && styles.buttonDisabled]}
+                onPress={handleSignup}
+                disabled={isLoading || Object.keys(errors).length > 0}
+            >
+                {isLoading ? (
+                    <ActivityIndicator color="#FFF" />
+                ) : (
+                    <Text style={styles.buttonText}>Đăng Ký</Text>
+                )}
             </TouchableOpacity>
 
             {/* Divider */}
@@ -353,19 +441,25 @@ export default function SignupScreen() {
                 <TouchableOpacity
                     style={styles.socialButton}
                     onPress={() => handleSocialSignup('Google')}
+                    disabled={isLoading}
                 >
                     <Text style={styles.socialText}>Google</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                     style={styles.socialButton}
                     onPress={() => handleSocialSignup('Facebook')}
+                    disabled={isLoading}
                 >
                     <Text style={styles.socialText}>Facebook</Text>
                 </TouchableOpacity>
             </View>
 
             {/* Login Link */}
-            <TouchableOpacity style={{ marginTop: 20, marginBottom: 30 }}>
+            <TouchableOpacity
+                style={{ marginTop: 20, marginBottom: 30 }}
+                onPress={() => router.replace('/login')}
+                disabled={isLoading}
+            >
                 <Text style={styles.register}>
                     Đã có tài khoản? <Text style={styles.registerLink}>Đăng nhập</Text>
                 </Text>
@@ -374,21 +468,6 @@ export default function SignupScreen() {
     );
 }
 
-// Password Requirement Component
-function PasswordRequirement({ met, text }: { met: boolean; text: string }) {
-    return (
-        <View style={styles.requirement}>
-            {met ? (
-                <Check size={12} color="#10B981" />
-            ) : (
-                <X size={12} color="#9CA3AF" />
-            )}
-            <Text style={[styles.requirementText, met && styles.requirementMet]}>
-                {text}
-            </Text>
-        </View>
-    );
-}
 
 const styles = StyleSheet.create({
     container: {
@@ -440,6 +519,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#DDD',
         fontSize: 15,
+        color: '#333',
     },
     inputError: {
         borderColor: '#EF4444',
@@ -458,6 +538,7 @@ const styles = StyleSheet.create({
         flex: 1,
         paddingVertical: 14,
         fontSize: 15,
+        color: '#333',
     },
     errorContainer: {
         flexDirection: 'row',
@@ -557,6 +638,10 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontWeight: 'bold',
         fontSize: 15,
+    },
+    buttonDisabled: {
+        backgroundColor: '#CCC',
+        opacity: 0.7,
     },
     dividerContainer: {
         flexDirection: 'row',
