@@ -4,15 +4,17 @@ import {
     Text, 
     TouchableOpacity, 
     StyleSheet, 
-    SafeAreaView 
+    SafeAreaView,
+    Image 
 } from 'react-native';
-import { ShoppingCart, Bell, Menu, ArrowLeft } from 'lucide-react-native';
+import { ShoppingCart, Bell, ArrowLeft } from 'lucide-react-native';
 import { COLORS } from '../theme/colors';
 import { useRouter } from 'expo-router';
 
 // 🟢 ĐỊNH NGHĨA TYPE CHO HEADER PROPS
 type HeaderProps = {
     cartCount?: number;
+    notificationCount?: number;
     showBackButton?: boolean;
     title?: string;
 };
@@ -41,6 +43,7 @@ const HeaderIcon: React.FC<HeaderIconProps> = ({ IconComponent, count, onPress }
 // ⭐ Header chính
 export const Header: React.FC<HeaderProps> = ({
     cartCount = 0,
+    notificationCount = 0,
     showBackButton = false,
     title = "JEWELRY",
 }) => {
@@ -68,6 +71,13 @@ export const Header: React.FC<HeaderProps> = ({
                 {/* Nhóm Icon */}
                 <View style={styles.iconGroup}>
 
+                    {/* Chuông */}
+                    <HeaderIcon
+                        IconComponent={Bell}
+                        count={notificationCount}
+                        onPress={() => router.push('/notifications')}
+                    />
+
                     {/* Giỏ hàng + Badge */}
                     <HeaderIcon
                         IconComponent={ShoppingCart}
@@ -75,19 +85,16 @@ export const Header: React.FC<HeaderProps> = ({
                         onPress={() => router.push('/cart')}
                     />
 
-                    {/* Chuông */}
-                    <HeaderIcon
-                        IconComponent={Bell}
-                        count={0}
-                        onPress={() => console.log("Thông báo")}
-                    />
-
-                    {/* Menu */}
-                    <HeaderIcon
-                        IconComponent={Menu}
-                        count={0}
-                        onPress={() => router.push('/')} // 🟢 ĐỔI '/home' thành '/'
-                    />
+                    {/* 🆕 AVATAR PROFILE */}
+                    <TouchableOpacity 
+                        style={styles.avatarButton} 
+                        onPress={() => router.push('/profile')}
+                    >
+                        <Image 
+                            source={{ uri: 'https://i.pravatar.cc/150?img=68' }} 
+                            style={styles.avatar} 
+                        />
+                    </TouchableOpacity>
                 </View>
             </View>
         </SafeAreaView>
@@ -143,4 +150,15 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         fontSize: 10,
     },
+    // Style cho Avatar
+    avatarButton: {
+        marginLeft: 16,
+    },
+    avatar: {
+        width: 32,
+        height: 32,
+        borderRadius: 16, // Tròn
+        borderWidth: 1,
+        borderColor: COLORS.lightText,
+    }
 });

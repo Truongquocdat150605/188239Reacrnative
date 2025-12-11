@@ -1,3 +1,4 @@
+
 // components/ProductGrid.tsx
 
 import React from 'react';
@@ -8,20 +9,18 @@ import {
     TouchableOpacity,
     Image,
     FlatList,
-    Dimensions
+    useWindowDimensions,
+    Platform
 } from 'react-native';
 import { MOCK_PRODUCTS } from '../constants/mockProducts';
 import { COLORS } from '../theme/colors';
-import { Platform } from 'react-native';
-
-const { width } = Dimensions.get('window');
 
 type Product = {
     id: string;
     name: string;
     price: number;
     originalPrice?: number;
-    imageUri: any;      // ← FIX
+    imageUri: any;      
     category: string;
     isNew?: boolean;
     isSale?: boolean;
@@ -34,24 +33,23 @@ type Product = {
     };
 };
 
-
 type ProductCardProps = {
     product: Product;
     onPress: (product: Product) => void;
     onAddToCart: (product: Product) => void;
+    cardWidth: number; 
 };
 
-const ProductCard: React.FC<ProductCardProps> = ({ product, onPress, onAddToCart }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ product, onPress, onAddToCart, cardWidth }) => {
     const isOnSale = product.originalPrice && product.originalPrice > product.price;
 
-    // 🔧 FIX: Tránh lỗi khi originalPrice là undefined
     const discountPercent = isOnSale && product.originalPrice
         ? Math.round((1 - product.price / product.originalPrice) * 100)
         : 0;
 
     return (
         <TouchableOpacity
-            style={styles.productCard}
+            style={[styles.productCard, { width: cardWidth }]}
             onPress={() => onPress(product)}
             activeOpacity={0.9}
         >
@@ -61,7 +59,6 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onPress, onAddToCart
                     style={styles.productImage}
                     resizeMode="cover"
                 />
-
 
                 {/* Badges */}
                 <View style={styles.badgesContainer}>
@@ -90,14 +87,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onPress, onAddToCart
                     {product.name}
                 </Text>
 
-                <Text style={styles.productSpecs}>
-                    {product.specifications.material}
-                </Text>
-
                 <View style={styles.ratingContainer}>
                     <Text style={styles.ratingStars}>
                         {'⭐'.repeat(Math.floor(product.rating))}
-                        {product.rating % 1 > 0 ? '½' : ''}
                     </Text>
                     <Text style={styles.ratingText}>({product.reviewCount})</Text>
                 </View>
@@ -132,12 +124,36 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
     onAddToCart = (product) => console.log('Add to cart:', product.name),
     onSeeAllPress,
 }) => {
-    // 🔧 FIX: Xử lý khi products là undefined
     const safeProducts = products || MOCK_PRODUCTS;
+    const { width } = useWindowDimensions();
+
+    // 🟢 LOGIC CHIA CỘT RESPONSIVE
+    let numColumns = 2; // Mặc định mobile
+    if (width > 1200) numColumns = 5;      // Màn hình lớn (PC)
+    else if (width > 900) numColumns = 4;  // Laptop nhỏ / Tablet ngang
+    else if (width > 600) numColumns = 3;  // Tablet dọc
+
+    // 🟢 ALIGNMENT LOGIC (Đã sửa để khớp hoàn toàn với Banner)
+    const maxGridWidth = 1200;
+    const containerPadding = width > maxGridWidth 
+        ? (width - maxGridWidth) / 2 
+        : 15;
+
+    // Khoảng cách giữa các item
+    const gap = 15;
+    const totalGap = gap * (numColumns - 1);
+    
+    // Chiều rộng card = (Tổng màn hình - Lề 2 bên - Tổng khoảng cách giữa) / Số cột
+    // Ở đây ta dùng (width - containerPadding*2 - totalGap) nếu full width
+    // Hoặc (maxGridWidth - totalGap) nếu bị giới hạn 1200
+    
+    // Tính toán lại cardWidth dựa trên vùng hiển thị thực tế
+    const availableWidth = width > maxGridWidth ? maxGridWidth : (width - containerPadding * 2);
+    const cardWidth = (availableWidth - totalGap) / numColumns;
 
     return (
         <View style={styles.container}>
-            <View style={styles.sectionHeader}>
+            <View style={[styles.sectionHeader, { paddingHorizontal: containerPadding }]}>
                 <Text style={styles.sectionTitle}>{title}</Text>
                 {onSeeAllPress && (
                     <TouchableOpacity onPress={onSeeAllPress}>
@@ -146,28 +162,31 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
                 )}
             </View>
 
-            <FlatList
-                data={safeProducts}
-                renderItem={({ item }) => (
-                    <ProductCard
-                        product={item}
-                        onPress={onProductPress}
-                        onAddToCart={onAddToCart}
-                    />
-                )}
-                keyExtractor={(item) => item.id}
-                numColumns={2}
-                scrollEnabled={false}
-                contentContainerStyle={styles.productsContainer}
-                columnWrapperStyle={styles.columnWrapper}
-                ListEmptyComponent={
-                    <View style={styles.emptyState}>
-                        <Text style={styles.emptyStateText}>📭</Text>
-                        <Text style={styles.emptyStateTitle}>Không có sản phẩm</Text>
-                    </View>
-                }
-            />
-
+            <View style={[styles.gridWrapper, { paddingHorizontal: containerPadding }]}>
+                <FlatList
+                    key={numColumns} 
+                    data={safeProducts}
+                    renderItem={({ item }) => (
+                        <ProductCard
+                            product={item}
+                            onPress={onProductPress}
+                            onAddToCart={onAddToCart}
+                            cardWidth={cardWidth}
+                        />
+                    )}
+                    keyExtractor={(item) => item.id}
+                    numColumns={numColumns}
+                    scrollEnabled={false}
+                    columnWrapperStyle={[styles.columnWrapper, { gap: gap }]}
+                    contentContainerStyle={{ gap: 15 }} 
+                    ListEmptyComponent={
+                        <View style={styles.emptyState}>
+                            <Text style={styles.emptyStateText}>📭</Text>
+                            <Text style={styles.emptyStateTitle}>Không có sản phẩm</Text>
+                        </View>
+                    }
+                />
+            </View>
         </View>
     );
 };
@@ -189,7 +208,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 20,
         marginBottom: 15,
     },
     sectionTitle: {
@@ -202,33 +220,32 @@ const styles = StyleSheet.create({
         color: COLORS.primary,
         fontWeight: '600',
     },
-    productsContainer: {
-        paddingHorizontal: 15,
+    gridWrapper: {
+        // Wrapper để áp dụng padding ngang
     },
     columnWrapper: {
-        justifyContent: 'space-between',
-        marginBottom: 15,
+        justifyContent: 'flex-start',
     },
     productCard: {
-        // width: (width - 45) / 2,
-        width: (Platform.OS === 'web' ? 390 : width - 30) / 2,
-
         backgroundColor: COLORS.background,
         borderRadius: 12,
         borderWidth: 1,
         borderColor: COLORS.lightBackground,
-        // overflow: 'hidden',
         overflow: 'visible',
-        shadowColor: COLORS.text,
+        shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
+        shadowOpacity: 0.05,
         shadowRadius: 4,
-        elevation: 3,
+        elevation: 2,
     },
     imageContainer: {
         position: 'relative',
-        height: 150,
-        overflow: 'visible',
+        width: '100%',
+        aspectRatio: 1, 
+        backgroundColor: '#F9F9F9',
+        borderTopLeftRadius: 12,
+        borderTopRightRadius: 12,
+        overflow: 'hidden',
     },
     productImage: {
         width: '100%',
@@ -261,71 +278,66 @@ const styles = StyleSheet.create({
         position: 'absolute',
         bottom: 8,
         right: 8,
-        backgroundColor: COLORS.primary, // 🟢 ĐỔI THÀNH MÀU NỔI BẬT
-        width: 36, // 🟢 TĂNG KÍCH THƯỚC
-        height: 36,
-        borderRadius: 18,
+        backgroundColor: 'rgba(255, 255, 255, 0.9)', 
+        width: 32, 
+        height: 32,
+        borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 3,
-        elevation: 4,
-        borderWidth: 2,
-        borderColor: 'white', // 🟢 VIỀN TRẮNG ĐỂ NỔI BẬT
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
     },
     addToCartText: {
-        fontSize: 18, // 🟢 TĂNG SIZE
-        color: 'white', // 🟢 MÀU TRẮNG TRÊN NỀN VÀNG
+        fontSize: 16, 
     },
     productInfo: {
-        padding: 12,
+        padding: 10,
     },
     productName: {
         fontSize: 14,
-        fontWeight: '600',
+        fontWeight: '500', 
         color: COLORS.text,
         marginBottom: 4,
         lineHeight: 18,
-    },
-    productSpecs: {
-        fontSize: 12,
-        color: COLORS.subText,
-        marginBottom: 6,
+        height: 36, 
     },
     ratingContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 4,
     },
     ratingStars: {
-        fontSize: 12,
+        fontSize: 10,
         marginRight: 4,
     },
     ratingText: {
-        fontSize: 11,
+        fontSize: 10,
         color: COLORS.subText,
     },
     priceContainer: {
         flexDirection: 'row',
         alignItems: 'center',
+        flexWrap: 'wrap',
     },
     currentPrice: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: 'bold',
         color: COLORS.primary,
         marginRight: 6,
     },
     originalPrice: {
-        fontSize: 12,
-        color: COLORS.lightText,
+        fontSize: 11,
+        color: '#AAA',
         textDecorationLine: 'line-through',
     },
     emptyState: {
         alignItems: 'center',
         justifyContent: 'center',
         padding: 40,
+        width: '100%',
     },
     emptyStateText: {
         fontSize: 48,

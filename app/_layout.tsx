@@ -1,11 +1,16 @@
+import 'react-native-reanimated'; // Must be first
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet, Platform } from 'react-native';
-import 'react-native-reanimated';
+import { View, StyleSheet, useColorScheme } from 'react-native';
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useState, useEffect } from 'react';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { CartProvider } from '@/lib/CartContext';
+import { CartProvider } from '../lib/CartContext';
+import { NotificationProvider } from '../lib/NotificationContext';
+import { WishlistProvider } from '../lib/WishlistContext';
+import { AuthProvider } from '../lib/AuthContext';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -13,55 +18,71 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const [isFirstLaunch, setIsFirstLaunch] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem('alreadyLaunched').then(value => {
+      if (value === null) {
+        setIsFirstLaunch(true);
+      } else {
+        setIsFirstLaunch(false);
+      }
+    });
+  }, []);
+
+  if (isFirstLaunch === null) {
+    return null;
+  }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <CartProvider>
+    <SafeAreaProvider>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <AuthProvider>
+          <NotificationProvider>
+            <CartProvider>
+              <WishlistProvider>
+                <View style={styles.container}>
+                  <Stack initialRouteName={isFirstLaunch ? "welcome" : "login"}>
+                    <Stack.Screen name="welcome" options={{ headerShown: false }} />
+                    <Stack.Screen name="login" options={{ headerShown: false }} />
+                    <Stack.Screen name="SignupScreen" options={{ headerShown: false }} />
+                    <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+                    <Stack.Screen name="home" options={{ headerShown: false }} />
 
-        {/* 🟦 Only apply frame on WEB */}
-        <View style={styles.container}>
-          <View style={Platform.OS === 'web' ? styles.phoneFrame : styles.fullMobile}>
-            <Stack initialRouteName="login">
-              <Stack.Screen name="login" options={{ headerShown: false }} />
-              <Stack.Screen name="SignupScreen" options={{ headerShown: false }} />
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="cart" options={{ headerShown: false }} />
-              <Stack.Screen
-                name="modal"
-                options={{ presentation: 'modal', title: 'Modal' }}
-              />
-            </Stack>
-          </View>
-        </View>
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                    <Stack.Screen name="cart" options={{ headerShown: false }} />
+                    <Stack.Screen name="checkout" options={{ headerShown: false }} />
+                    <Stack.Screen name="productdetail" options={{ headerShown: false }} />
+                    <Stack.Screen name="category/[id]" options={{ headerShown: false }} />
+                    <Stack.Screen name="profile" options={{ headerShown: false }} />
+                    <Stack.Screen name="orders" options={{ headerShown: false }} />
+                    <Stack.Screen name="notifications" options={{ headerShown: false }} />
+                    <Stack.Screen name="wishlist" options={{ headerShown: false }} />
+                    <Stack.Screen name="addresses" options={{ headerShown: false }} />
+                    <Stack.Screen name="change-password" options={{ headerShown: false }} />
+                    <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
+                    <Stack.Screen name="chat" options={{ headerShown: false }} />
 
-        <StatusBar style="auto" />
-      </CartProvider>
-    </ThemeProvider>
+                    <Stack.Screen
+                      name="modal"
+                      options={{ presentation: 'modal', title: 'Modal' }}
+                    />
+                  </Stack>
+                </View>
+
+                <StatusBar style="auto" />
+              </WishlistProvider>
+            </CartProvider>
+          </NotificationProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E8E8E8',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  // 🟡 Mobile frame trên WEB
-  phoneFrame: {
-    width: 390,     // iPhone 12/13/14 width
-    height: 844,    // iPhone 12/13/14 height
     backgroundColor: '#fff',
-    borderRadius: 28,
-    overflow: 'hidden',
-    boxShadow: '0 4px 18px rgba(0,0,0,0.2)',
-  },
-
-  // 🟢 Mobile thực thì full
-  fullMobile: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
   },
 });

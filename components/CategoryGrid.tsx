@@ -1,3 +1,4 @@
+
 // components/CategoryGrid.tsx
 
 import React from 'react';
@@ -7,12 +8,11 @@ import {
     StyleSheet, 
     ScrollView, 
     TouchableOpacity,
-    Dimensions 
+    Dimensions,
+    useWindowDimensions
 } from 'react-native';
 import { MOCK_CATEGORIES } from '../constants/mockCategories';
 import { COLORS } from '../theme/colors';
-
-const { width } = Dimensions.get('window');
 
 type Category = {
     id: string;
@@ -25,7 +25,7 @@ type Category = {
 type CategoryCardProps = {
     category: Category;
     onPress: (category: Category) => void;
-    isSelected?: boolean; // 🆕 THÊM PROP NÀY
+    isSelected?: boolean;
 };
 
 const CategoryCard: React.FC<CategoryCardProps> = ({ category, onPress, isSelected = false }) => {
@@ -33,20 +33,20 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onPress, isSelect
         <TouchableOpacity 
             style={[
                 styles.categoryCard,
-                isSelected && styles.categoryCardSelected // 🆕 THÊM SELECTED STYLE
+                isSelected && styles.categoryCardSelected
             ]}
             onPress={() => onPress(category)}
             activeOpacity={0.8}
         >
             <View style={[
                 styles.iconContainer,
-                isSelected && styles.iconContainerSelected // 🆕 THÊM SELECTED STYLE
+                isSelected && styles.iconContainerSelected 
             ]}>
                 <Text style={styles.iconText}>{category.icon}</Text>
             </View>
             <Text style={[
                 styles.categoryName,
-                isSelected && styles.categoryNameSelected // 🆕 THÊM SELECTED STYLE
+                isSelected && styles.categoryNameSelected 
             ]} numberOfLines={1}>
                 {category.name}
             </Text>
@@ -59,16 +59,33 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onPress, isSelect
 
 type CategoryGridProps = {
     onCategoryPress?: (category: Category) => void;
-    selectedCategory?: string | null; // 🆕 THÊM PROP NÀY
+    selectedCategory?: string | null;
 };
 
 export const CategoryGrid: React.FC<CategoryGridProps> = ({ 
     onCategoryPress = (category) => console.log('Category pressed:', category.name),
-    selectedCategory = null // 🆕 DEFAULT VALUE
+    selectedCategory = null 
 }) => {
+    const { width } = useWindowDimensions();
+
+    // 🟢 ALIGNMENT LOGIC (Đã sửa để khớp hoàn toàn với Banner)
+    // Banner rộng ~92% hoặc max 1200px.
+    // Để thẳng hàng, ta cần padding sao cho nội dung bắt đầu từ điểm đó.
+    
+    const maxGridWidth = 1200;
+    
+    // Nếu màn hình lớn hơn 1200px (Web PC)
+    // Padding = (Màn hình - 1200) / 2
+    // Nếu màn hình nhỏ (Mobile/Tablet)
+    // Padding mặc định = 15px (giống margin của Banner mobile)
+    
+    const containerPadding = width > maxGridWidth 
+        ? (width - maxGridWidth) / 2 
+        : 15; 
+
     return (
         <View style={styles.container}>
-            <View style={styles.sectionHeader}>
+            <View style={[styles.sectionHeader, { paddingHorizontal: containerPadding }]}>
                 <Text style={styles.sectionTitle}>Danh Mục</Text>
                 <TouchableOpacity onPress={() => onCategoryPress({ 
                     id: 'all', 
@@ -84,14 +101,17 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
             <ScrollView 
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.categoriesContainer}
+                contentContainerStyle={[
+                    styles.categoriesContainer, 
+                    { paddingHorizontal: containerPadding }
+                ]}
             >
                 {MOCK_CATEGORIES.map((category) => (
                     <CategoryCard 
                         key={category.id} 
                         category={category} 
                         onPress={onCategoryPress}
-                        isSelected={selectedCategory === category.type} // 🆕 TRUYỀN SELECTED STATE
+                        isSelected={selectedCategory === category.type}
                     />
                 ))}
             </ScrollView>
@@ -108,7 +128,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 20,
         marginBottom: 15,
     },
     sectionTitle: {
@@ -122,7 +141,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     categoriesContainer: {
-        paddingHorizontal: 15,
         paddingVertical: 5,
     },
     categoryCard: {
@@ -130,7 +148,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginRight: 20,
     },
-    categoryCardSelected: { // 🆕 STYLE KHI ĐƯỢC CHỌN
+    categoryCardSelected: { 
         transform: [{ scale: 1.05 }],
     },
     iconContainer: {
@@ -149,7 +167,7 @@ const styles = StyleSheet.create({
         shadowRadius: 3,
         elevation: 2,
     },
-    iconContainerSelected: { // 🆕 STYLE KHI ĐƯỢC CHỌN
+    iconContainerSelected: { 
         backgroundColor: COLORS.primaryLight,
         borderColor: COLORS.primary,
         borderWidth: 2,
@@ -164,7 +182,7 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginBottom: 4,
     },
-    categoryNameSelected: { // 🆕 STYLE KHI ĐƯỢC CHỌN
+    categoryNameSelected: { 
         color: COLORS.primary,
         fontWeight: 'bold',
     },

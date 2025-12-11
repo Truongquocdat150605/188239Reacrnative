@@ -1,6 +1,7 @@
+
 // components/BannerCarousel.tsx
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
     View, 
     Text, 
@@ -8,13 +9,14 @@ import {
     ScrollView, 
     Image, 
     TouchableOpacity, 
-    Dimensions 
+    useWindowDimensions,
+    Platform,
+    NativeSyntheticEvent,
+    NativeScrollEvent
 } from 'react-native';
 import { MOCK_BANNERS } from '../constants/mockBanners';
-import { COLORS } from '../theme/colors'; // Import colors từ theme của bạn
+import { COLORS } from '../theme/colors'; 
 import { useRouter } from 'expo-router';
-
-const { width } = Dimensions.get('window');
 
 // Định nghĩa type cho Banner
 type Banner = {
@@ -27,26 +29,24 @@ type Banner = {
 
 type BannerItemProps = {
     banner: Banner;
+    width: number;
+    height: number;
 };
 
-const BANNER_WIDTH = width * 0.9; 
-const BANNER_HEIGHT = 180;
-
-// Component render từng Banner - ĐÃ UPDATE COLORS
-const BannerItem: React.FC<BannerItemProps> = ({ banner }) => {
+// Component render từng Banner
+const BannerItem: React.FC<BannerItemProps> = ({ banner, width, height }) => {
     const router = useRouter();
 
     const handlePress = () => {
         console.log('Banner pressed:', banner.title);
-        // Tạm thời comment router để tránh lỗi
         // router.push(banner.link as any);
     };
 
     return (
         <TouchableOpacity 
-            style={styles.bannerContainer} 
+            style={[styles.bannerContainer, { width: width, height: height }]} 
             onPress={handlePress}
-            activeOpacity={0.8}
+            activeOpacity={0.9}
         >
             <Image 
                 source={{ uri: banner.imageUri }} 
@@ -61,47 +61,105 @@ const BannerItem: React.FC<BannerItemProps> = ({ banner }) => {
 };
 
 export const BannerCarousel: React.FC = () => {
+    const { width } = useWindowDimensions();
+    const scrollRef = useRef<ScrollView>(null);
+    const [activeIndex, setActiveIndex] = useState(0);
+    
+    // 🟢 RESPONSIVE CONFIG
+    const MAX_WEB_WIDTH = 1200;
+    const bannerWidth = Math.min(width * 0.92, MAX_WEB_WIDTH);
+    const gap = 15; // Khoảng cách giữa các banner
+    
+    // Chiều cao tỉ lệ theo chiều rộng nhưng có giới hạn
+    const bannerHeight = Platform.OS === 'web' 
+        ? Math.min(bannerWidth * 0.4, 450) 
+        : 180; 
+
+    // 🟢 AUTO PLAY LOGIC
+    useEffect(() => {
+        const interval = setInterval(() => {
+            let nextIndex = activeIndex + 1;
+            if (nextIndex >= MOCK_BANNERS.length) {
+                nextIndex = 0; // Quay về đầu
+            }
+            
+            // Cuộn tới vị trí tiếp theo
+            if (scrollRef.current) {
+                scrollRef.current.scrollTo({
+                    x: nextIndex * (bannerWidth + gap), // Tính toán tọa độ x
+                    animated: true,
+                });
+            }
+            setActiveIndex(nextIndex);
+        }, 4000); // 4 giây chuyển 1 lần
+
+        return () => clearInterval(interval);
+    }, [activeIndex, bannerWidth]);
+
+    // Cập nhật index khi người dùng tự vuốt tay
+    const onMomentumScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const contentOffsetX = event.nativeEvent.contentOffset.x;
+        const index = Math.round(contentOffsetX / (bannerWidth + gap));
+        setActiveIndex(index);
+    };
+
     return (
         <View style={styles.carouselWrapper}>
-            <ScrollView
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.scrollViewContent}
-                snapToInterval={BANNER_WIDTH + 15}
-                decelerationRate="fast"
-            >
-                {MOCK_BANNERS.map((banner) => (
-                    <BannerItem key={banner.id} banner={banner} />
-                ))}
-            </ScrollView>
+            <View style={styles.centerContainer}>
+                <ScrollView
+                    ref={scrollRef}
+                    horizontal
+                    pagingEnabled={Platform.OS !== 'web'} // Web paging behavior is different
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.scrollViewContent}
+                    snapToInterval={bannerWidth + gap}
+                    decelerationRate="fast"
+                    onMomentumScrollEnd={onMomentumScrollEnd}
+                    // Trên web cần style này để mượt hơn
+                    scrollEventThrottle={16}
+                >
+                    {MOCK_BANNERS.map((banner) => (
+                        <BannerItem 
+                            key={banner.id} 
+                            banner={banner} 
+                            width={bannerWidth} 
+                            height={bannerHeight}
+                        />
+                    ))}
+                </ScrollView>
+            </View>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
     carouselWrapper: {
-        height: BANNER_HEIGHT + 20,
-        backgroundColor: COLORS.background, // Sử dụng background từ theme
-        marginVertical: 10,
+        width: '100%',
+        marginVertical: 15,
+        alignItems: 'center', 
+    },
+    centerContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
     },
     scrollViewContent: {
-        paddingHorizontal: 15,
+        paddingHorizontal: 15, 
         alignItems: 'center',
+        gap: 15, // Gap prop for web/new arch
     },
     bannerContainer: {
-        width: BANNER_WIDTH,
-        height: BANNER_HEIGHT,
-        borderRadius: 12,
+        borderRadius: 16, 
         overflow: 'hidden',
-        marginRight: 15,
+        marginRight: Platform.OS === 'web' ? 15 : 0, // Dùng margin right trên web thay vì gap nếu cần
         position: 'relative',
-        // Shadow sử dụng màu text từ theme
-        shadowColor: COLORS.text,
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.1,
-        shadowRadius: 5,
-        elevation: 3,
+        backgroundColor: COLORS.lightBackground, 
+        
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        elevation: 5,
     },
     image: {
         width: '100%',
@@ -114,19 +172,23 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.25)', // Giữ lớp phủ tối
+        backgroundColor: 'rgba(0, 0, 0, 0.3)', 
         justifyContent: 'center',
-        paddingHorizontal: 20,
+        paddingHorizontal: 30,
     },
     title: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#FFFFFF', // Giữ trắng để nổi bật trên overlay
+        fontSize: Platform.OS === 'web' ? 32 : 20, 
+        fontWeight: '800',
+        color: '#FFFFFF', 
         letterSpacing: 0.5,
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 4,
+        marginBottom: 8,
     },
     subtitle: {
-        fontSize: 14,
-        color: '#EEEEEE', // Giữ trắng nhạt
-        marginTop: 5,
+        fontSize: Platform.OS === 'web' ? 18 : 14,
+        color: '#F0F0F0', 
+        fontWeight: '500',
     }
 });

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import {
     View,
@@ -10,6 +11,7 @@ import {
 
 } from 'react-native';
 import { useRouter } from "expo-router";
+import { MessageCircle } from 'lucide-react-native'; // 🆕 Import Icon chat
 
 // Components
 import { Header } from '../components/Header';
@@ -21,99 +23,56 @@ import { ProductGrid } from '../components/ProductGrid';
 import { COLORS } from '../theme/colors';
 import { MOCK_PRODUCTS } from '../constants/mockProducts';
 import { useCart } from '../lib/CartContext'; // 🆕 IMPORT CART CONTEXT
+import { useNotification } from '../lib/NotificationContext'; // 🆕 IMPORT NOTIFICATION CONTEXT
 
 export default function HomeScreen() {
     const router = useRouter();
 
-    // 🆕 LẤY CART CONTEXT
+    // 🆕 LẤY CONTEXT
     const { addToCart, cartCount } = useCart();
+    const { unreadCount } = useNotification();
+    
     const [searchText, setSearchText] = useState("");
-    // State lưu danh mục người dùng chọn
-    const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-
-    const handleLogout = () => {
-        Alert.alert(
-            "Đăng xuất",
-            "Bạn có chắc muốn đăng xuất?",
-            [
-                { text: "Hủy", style: "cancel" },
-                {
-                    text: "Đăng xuất",
-                    onPress: () => {
-                        console.log("[LOGOUT] Đang xóa session và đăng xuất...");
-                        router.replace('/login');
-                    }
-                }
-            ]
-        );
-    };
-
-    // Khi nhấn vào danh mục
+    
+    // 🟢 SỬA LOGIC: Không dùng state local để lọc nữa, mà chuyển trang
     const handleCategoryPress = (category: any) => {
-        console.log("Selected:", category.name);
-        // Nếu đang chọn cùng category thì bỏ chọn
-        if (selectedCategory === category.type) {
-            setSelectedCategory(null);
-        } else {
-            setSelectedCategory(category.type);
-        }
+        // Chuyển sang trang danh mục riêng
+        router.push({
+            pathname: "/category/[id]",
+            params: { id: category.type }
+        });
     };
 
     const handleProductPress = (product: any) => {
-        console.log('📦 Product selected:', product.name);
-        // Sau này sẽ navigate đến product detail
-        // router.push(`/product/${product.id}`);
+        router.push({
+            pathname: "/productdetail",
+            params: { id: product.id }
+        });
     };
 
-    // 🆕 UPDATE: Dùng cart context để thêm vào giỏ hàng thật
     const handleAddToCart = (product: any) => {
-    addToCart(product);
-
-    Alert.alert(
-        "🎉 Thêm vào giỏ hàng thành công!",
-        `Đã thêm "${product.name}" vào giỏ hàng`,
-        [
-            { text: "Tiếp tục mua sắm", style: "cancel" },
-            { text: "Xem giỏ hàng", onPress: () => router.push('/cart') }
-        ]
-    );
-};
-
-
-    // Hàm đi đến giỏ hàng
-    const goToCart = () => {
-        router.push('/cart');
+        addToCart(product);
+        Alert.alert("Thành công", `Đã thêm "${product.name}" vào giỏ`);
     };
 
-    // Hàm clear filter
-    const clearFilter = () => {
-        setSelectedCategory(null);
-    };
-    // 🆕 STATE TÌM KIẾM
-
-    // 🆕 LỌC SẢN PHẨM
+    // 🆕 LỌC SẢN PHẨM (Chỉ dùng cho search bar ở Home)
     const filteredProducts = MOCK_PRODUCTS.filter(p => {
         const text = searchText.toLowerCase();
-
         return (
             p.name.toLowerCase().includes(text) ||
-            p.specifications?.material?.toLowerCase().includes(text) ||
-            p.category.toLowerCase().includes(text)
+            p.specifications?.material?.toLowerCase().includes(text)
         );
     });
-
 
     return (
         <SafeAreaView style={styles.safeArea}>
 
-            {/* 🆕 TRUYỀN CART COUNT THẬT */}
-            <Header cartCount={cartCount} />
+            <Header cartCount={cartCount} notificationCount={unreadCount} />
 
             <SearchBar
                 value={searchText}
                 onChangeText={setSearchText}
             />
-
 
             <ScrollView
                 style={styles.scrollView}
@@ -125,85 +84,33 @@ export default function HomeScreen() {
                 </View>
 
                 <View style={styles.sectionMargin}>
-                    {/* 🆕 TRUYỀN SELECTED CATEGORY ĐỂ HIGHLIGHT */}
                     <CategoryGrid
                         onCategoryPress={handleCategoryPress}
-                        selectedCategory={selectedCategory}
+                        selectedCategory={null} // Không highlight ở Home nữa
                     />
                 </View>
 
-                {/* Filter Indicator */}
-                {selectedCategory && (
-                    <View style={styles.filterIndicator}>
-                        <View style={styles.filterInfo}>
-                            <Text style={styles.filterText}>
-                                Đang xem: <Text style={styles.filterCategory}>
-                                    {selectedCategory === 'rings' ? 'Nhẫn' :
-                                        selectedCategory === 'bracelets' ? 'Vòng tay' :
-                                            selectedCategory === 'necklaces' ? 'Dây chuyền' :
-                                                selectedCategory === 'diamonds' ? 'Kim cương' :
-                                                    selectedCategory === 'gold' ? 'Vàng 24K' :
-                                                        selectedCategory === 'pearls' ? 'Ngọc trai' :
-                                                            selectedCategory === 'wedding' ? 'Nhẫn cưới' :
-                                                                selectedCategory === 'luxury' ? 'Cao cấp' :
-                                                                    selectedCategory}
-                                </Text>
-                            </Text>
-                            <Text style={styles.filterCount}>
-                                {MOCK_PRODUCTS.filter(p => p.category === selectedCategory).length} sản phẩm
-                            </Text>
-                        </View>
-                        <TouchableOpacity
-                            style={styles.clearFilterButton}
-                            onPress={clearFilter}
-                        >
-                            <Text style={styles.clearFilterText}>✕ Hiển thị tất cả</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
-
-                {/* PRODUCT GRID */}
+                {/* PRODUCT GRID - Hiển thị sản phẩm nổi bật hoặc kết quả tìm kiếm */}
                 <View style={styles.sectionMargin}>
                     <ProductGrid
-                        title={
-                            searchText
-                                ? `Kết quả tìm kiếm (${filteredProducts.length})`
-                                : selectedCategory
-                                    ? "Sản phẩm theo danh mục"
-                                    : "Sản phẩm nổi bật"
-                        }
-                        products={
-                            searchText
-                                ? filteredProducts
-                                : selectedCategory
-                                    ? MOCK_PRODUCTS.filter(p => p.category === selectedCategory)
-                                    : MOCK_PRODUCTS
-                        }
+                        title={searchText ? "Kết quả tìm kiếm" : "Gợi ý cho bạn"}
+                        products={searchText ? filteredProducts : MOCK_PRODUCTS}
                         onProductPress={handleProductPress}
                         onAddToCart={handleAddToCart}
-                        onSeeAllPress={clearFilter}
+                        // onSeeAllPress={() => handleCategoryPress({ type: 'all' })}
                     />
-
                 </View>
 
-                {/* 🆕 CART BUTTON */}
-                {/* <TouchableOpacity 
-                    style={styles.cartButton}
-                    onPress={goToCart}
-                >
-                    <Text style={styles.cartButtonIcon}>🛒</Text>
-                    <View style={styles.cartButtonInfo}>
-                        <Text style={styles.cartButtonTitle}>Xem giỏ hàng</Text>
-                        <Text style={styles.cartButtonCount}>{cartCount} sản phẩm</Text>
-                    </View>
-                    <Text style={styles.cartButtonArrow}>→</Text>
-                </TouchableOpacity> */}
-
-                <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                    <Text style={styles.logoutButtonText}>Đăng Xuất</Text>
-                </TouchableOpacity>
-
             </ScrollView>
+
+            <TouchableOpacity 
+                style={styles.chatButton}
+                onPress={() => router.push('/chat')}
+                activeOpacity={0.8}
+            >
+                <MessageCircle size={28} color="white" fill="white" />
+            </TouchableOpacity>
+
         </SafeAreaView>
     );
 }
@@ -222,88 +129,21 @@ const styles = StyleSheet.create({
     sectionMargin: {
         marginBottom: 10
     },
-    // Filter Indicator
-    filterIndicator: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        backgroundColor: COLORS.lightBackground,
-        marginHorizontal: 20,
-        marginBottom: 15,
-        padding: 12,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: COLORS.primaryLight,
-    },
-    filterInfo: {
-        flex: 1,
-    },
-    filterText: {
-        fontSize: 14,
-        color: COLORS.text,
-        marginBottom: 4,
-    },
-    filterCategory: {
-        fontWeight: 'bold',
-        color: COLORS.primary,
-    },
-    filterCount: {
-        fontSize: 12,
-        color: COLORS.subText,
-    },
-    clearFilterButton: {
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-    },
-    clearFilterText: {
-        fontSize: 12,
-        color: COLORS.primary,
-        fontWeight: '600',
-    },
-    // Cart Button
-    cartButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
+    chatButton: {
+        position: 'absolute',
+        bottom: 25,
+        right: 20,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
         backgroundColor: COLORS.primary,
-        marginHorizontal: 20,
-        marginTop: 20,
-        padding: 16,
-        borderRadius: 12,
-    },
-    cartButtonIcon: {
-        fontSize: 24,
-        marginRight: 12,
-    },
-    cartButtonInfo: {
-        flex: 1,
-    },
-    cartButtonTitle: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: 'bold',
-        marginBottom: 2,
-    },
-    cartButtonCount: {
-        color: 'rgba(255, 255, 255, 0.9)',
-        fontSize: 14,
-    },
-    cartButtonArrow: {
-        fontSize: 20,
-        color: 'white',
-        fontWeight: 'bold',
-    },
-    // Logout Button
-    logoutButton: {
-        backgroundColor: '#FF3B30',
-        padding: 12,
-        borderRadius: 8,
-        marginHorizontal: 20,
-        marginTop: 15,
-        marginBottom: 30,
+        justifyContent: 'center',
         alignItems: 'center',
-    },
-    logoutButtonText: {
-        color: 'white',
-        fontWeight: 'bold',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+        elevation: 6,
+        zIndex: 100,
     }
 });

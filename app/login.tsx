@@ -13,73 +13,69 @@ import {
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { useRouter } from "expo-router";
 import { MOCK_USERS } from '../lib/users';
-import { saveUserSession } from "../utils/auth";
-
-const mockLogin = (email: string, password: string) => {
-    const user = MOCK_USERS.find(
-        // ⭐ SỬA Ở ĐÂY: Chuyển cả hai email sang chữ thường trước khi so sánh
-        u => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-    );
-    return user || null;
-};
-
-// // Hàm giả lập lưu session
-// const mockSaveUserSession = (user: { name: string, email: string }) => {
-//     console.log(`[SESSION] Đã lưu session cho user: ${user.email}`);
-// };
-
+import { useAuth } from '../lib/AuthContext';
 
 export default function LoginScreen() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+
     const router = useRouter();
+    const { login } = useAuth();
 
-   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-        Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ Email và Mật khẩu.');
-        return;
-    }
-
-    setIsLoading(true);
-
-    setTimeout(async () => {
-        setIsLoading(false);
-
-        // Tìm user trong mock DB
-        const user = MOCK_USERS.find(
-            u => u.email.toLowerCase() === email.toLowerCase() && u.password === password
-        );
-
-        if (user) {
-            // Lưu session
-            await saveUserSession(user);
-
-            Alert.alert('🎉 Thành công', `Chào mừng ${user.name}!`);
-            router.replace('/home'); // Chuyển sang Home
-        } else {
-            Alert.alert('❌ Đăng nhập thất bại', 'Email hoặc mật khẩu không chính xác');
+    const handleLogin = async () => {
+        if (!email.trim() || !password.trim()) {
+            Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ Email và Mật khẩu.');
+            return;
         }
 
-    }, 1500);
-};
+        setIsLoading(true);
+
+        setTimeout(async () => {
+            setIsLoading(false);
+
+            // Tìm user trong mock DB
+            const foundUser = MOCK_USERS.find(
+                u => u.email.toLowerCase() === email.toLowerCase() && u.password === password
+            );
+
+            if (foundUser) {
+                // Cập nhật Global State thông qua Context
+                login({
+                    name: foundUser.name,
+                    email: foundUser.email,
+                    phone: '0901234567', // Mock phone vì MOCK_USERS chưa có
+                    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(foundUser.name)}&background=0A84FF&color=fff`
+                });
+
+                Alert.alert('🎉 Thành công', `Chào mừng ${foundUser.name}!`);
+                router.replace('/home'); // Chuyển sang Tabs chính
+            } else {
+                Alert.alert('❌ Đăng nhập thất bại', 'Email hoặc mật khẩu không chính xác');
+            }
+
+        }, 1500);
+    };
 
 
     const handleRegister = () => {
-        // Chuyển sang màn hình đăng ký
-        // Đảm bảo bạn có file app/SignupScreen.tsx
-        router.push('/SignupScreen'); 
+        router.push('/SignupScreen');
     };
 
     const handleSocialLogin = (provider: string) => {
         Alert.alert('Thông báo', `Đang đăng nhập bằng ${provider}... (Chức năng chưa tích hợp API)`);
     };
+    
+    // Chuyển hướng sang màn hình Quên Mật Khẩu
+    const handleForgotPassword = () => {
+        router.push('/forgot-password'); 
+    };
 
     return (
         <SafeAreaView style={styles.safeArea}>
             <ScrollView contentContainerStyle={styles.scrollContent}>
-                
+
                 {/* Logo/Icon */}
                 <View style={styles.logoContainer}>
                     <Text style={styles.logoText}>🧑‍💻</Text>
@@ -124,7 +120,10 @@ export default function LoginScreen() {
                 </View>
 
                 {/* Forgot Password */}
-                <TouchableOpacity style={styles.forgotPasswordButton}>
+                <TouchableOpacity
+                    style={styles.forgotPasswordButton}
+                    onPress={handleForgotPassword}
+                >
                     <Text style={styles.forgotPasswordText}>Quên mật khẩu?</Text>
                 </TouchableOpacity>
 
@@ -142,7 +141,7 @@ export default function LoginScreen() {
                 </TouchableOpacity>
 
                 {/* --- Social Login Section --- */}
-                
+
                 {/* Divider */}
                 <View style={styles.dividerContainer}>
                     <View style={styles.divider} />
@@ -152,7 +151,7 @@ export default function LoginScreen() {
 
                 {/* Social Buttons */}
                 <View style={styles.socialRow}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.socialButton}
                         onPress={() => handleSocialLogin('Google')}
                         disabled={isLoading}
@@ -160,7 +159,7 @@ export default function LoginScreen() {
                         <Text style={styles.socialText}>G</Text>
                         <Text style={styles.socialButtonText}>Google</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.socialButton}
                         onPress={() => handleSocialLogin('Facebook')}
                         disabled={isLoading}
@@ -169,7 +168,7 @@ export default function LoginScreen() {
                         <Text style={styles.socialButtonText}>Facebook</Text>
                     </TouchableOpacity>
                 </View>
-                
+
                 {/* Đăng ký Link */}
                 <TouchableOpacity style={styles.registerLinkContainer} onPress={handleRegister}>
                     <Text style={styles.registerText}>
@@ -181,8 +180,6 @@ export default function LoginScreen() {
         </SafeAreaView>
     );
 }
-
-// --- Styles ---
 
 const styles = StyleSheet.create({
     safeArea: {
@@ -198,11 +195,9 @@ const styles = StyleSheet.create({
     },
     logoContainer: {
         marginBottom: 20,
-        // Dùng để tạo hình tròn/vuông cho logo
     },
     logoText: {
         fontSize: 48,
-        // Giả lập icon người dùng 🧑‍💻
     },
     welcomeTitle: {
         fontSize: 26,
@@ -215,8 +210,6 @@ const styles = StyleSheet.create({
         color: '#6B7280',
         marginBottom: 30,
     },
-    
-    // Input Styles
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -240,8 +233,6 @@ const styles = StyleSheet.create({
     eyeButton: {
         padding: 5,
     },
-    
-    // Forgot Password
     forgotPasswordButton: {
         alignSelf: 'flex-end',
         marginBottom: 30,
@@ -251,8 +242,6 @@ const styles = StyleSheet.create({
         color: '#0A84FF',
         fontWeight: '600',
     },
-    
-    // Button Styles
     button: {
         width: '100%',
         backgroundColor: '#0A84FF',
@@ -262,7 +251,7 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
     buttonDisabled: {
-        backgroundColor: '#A0C4FF', // Màu xám khi disabled
+        backgroundColor: '#A0C4FF',
         opacity: 0.8,
     },
     buttonText: {
@@ -270,8 +259,6 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         fontSize: 16,
     },
-
-    // Divider
     dividerContainer: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -288,8 +275,6 @@ const styles = StyleSheet.create({
         color: '#9CA3AF',
         fontSize: 14,
     },
-
-    // Social Login
     socialRow: {
         flexDirection: 'row',
         width: '100%',
@@ -311,15 +296,13 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold',
         marginRight: 8,
-        color: '#333', // Màu chữ Social
+        color: '#333',
     },
     socialButtonText: {
         fontSize: 15,
         fontWeight: '600',
         color: '#374151',
     },
-
-    // Register Link
     registerLinkContainer: {
         marginTop: 10,
     },

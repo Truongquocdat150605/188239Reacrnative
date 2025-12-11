@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import {
     View,
@@ -15,73 +16,40 @@ import { useRouter } from "expo-router";
 // Thư viện để xử lý tai thỏ / home indicator
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// Giữ nguyên import của bạn
 import { COLORS } from "../theme/colors";
-// import { useCart } from "../lib/CartContext"; // Tạm thời comment nếu hook này chưa hoạt động
+// Import hook từ context thực tế của bạn
+import { useCart } from "../lib/CartContext";
 import { MOCK_PRODUCTS } from "../constants/mockProducts";
-
-type CartItem = {
-    id: string;
-    name: string;
-    price: number;
-    imageUri: any;
-    quantity: number;
-};
 
 export default function CartScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets(); // Lấy khoảng cách an toàn
 
-    // --- LOGIC GIỎ HÀNG (Dùng state nội bộ để đảm bảo nút bấm hoạt động) ---
-    // Khởi tạo giỏ hàng giả lập từ MOCK_PRODUCTS để test
-    const [cartItems, setCartItems] = useState<CartItem[]>([
-        { ...MOCK_PRODUCTS[0], quantity: 1, imageUri: MOCK_PRODUCTS[0].imageUri },
-        { ...MOCK_PRODUCTS[1], quantity: 2, imageUri: MOCK_PRODUCTS[1].imageUri },
-    ]);
+    // --- SỬ DỤNG CONTEXT (Dữ liệu thật) ---
+    const {
+        cartItems,
+        removeFromCart,
+        updateQuantity,
+        clearCart,
+        addToCart,
+    } = useCart();
 
     const [selectedItems, setSelectedItems] = useState<string[]>([]);
     const [notes, setNotes] = useState<Record<string, string>>({});
     const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-    // Tự động chọn tất cả khi vào
+    // Đồng bộ lại selectedItems khi cart thay đổi (để tránh lỗi chọn item đã xóa)
     useEffect(() => {
-        // Nếu muốn mặc định chọn hết:
-        // setSelectedItems(cartItems.map((item) => item.id));
-    }, []);
+        // Chỉ giữ lại những item còn tồn tại trong giỏ hàng
+        setSelectedItems(prev => prev.filter(id => cartItems.some(item => item.id === id)));
+    }, [cartItems]);
 
-    // --- CÁC HÀM XỬ LÝ SỰ KIỆN (Hoạt động trực tiếp trên state) ---
+    // --- CÁC HÀM XỬ LÝ SỰ KIỆN ---
     const showToast = (message: string) => {
         setToastMessage(message);
         setTimeout(() => setToastMessage(null), 2000);
     };
 
-    const updateQuantity = (id: string, newQuantity: number) => {
-        setCartItems(prev => prev.map(item => 
-            item.id === id ? { ...item, quantity: Math.max(1, newQuantity) } : item
-        ));
-    };
-
-    const removeFromCart = (id: string) => {
-        setCartItems(prev => prev.filter(item => item.id !== id));
-        setSelectedItems(prev => prev.filter(itemId => itemId !== id));
-    };
-
-    const clearCart = () => {
-        setCartItems([]);
-        setSelectedItems([]);
-    };
-
-    const addToCart = (product: any) => {
-        setCartItems(prev => {
-            const exist = prev.find(i => i.id === product.id);
-            if (exist) {
-                return prev.map(i => i.id === product.id ? {...i, quantity: i.quantity + 1} : i);
-            }
-            return [...prev, { ...product, quantity: 1 }];
-        });
-    };
-
-    // --- TÍNH TOÁN ---
     const isAllSelected = cartItems.length > 0 && selectedItems.length === cartItems.length;
 
     const selectedTotal = useMemo(() =>
@@ -110,45 +78,73 @@ export default function CartScreen() {
         }
     };
 
+    // ✅ FIX: Xử lý Alert riêng cho Web và Mobile
     const handleRemoveItem = (id: string, name: string) => {
-        Alert.alert(
-            "Xóa sản phẩm",
-            `Bạn có chắc muốn xóa "${name}"?`,
-            [
-                { text: "Hủy", style: "cancel" },
-                {
-                    text: "Xóa",
-                    style: "destructive",
-                    onPress: () => {
-                        removeFromCart(id);
-                        showToast(`Đã xóa "${name}"`);
+        const performDelete = () => {
+            removeFromCart(id);
+            showToast(`Đã xóa "${name}"`);
+        };
+
+        if (Platform.OS === 'web') {
+            // Trên Web dùng window.confirm
+            if (window.confirm(`Bạn có chắc muốn xóa "${name}"?`)) {
+                performDelete();
+            }
+        } else {
+            // Trên Mobile dùng Alert
+            Alert.alert(
+                "Xóa sản phẩm",
+                `Bạn có chắc muốn xóa "${name}"?`,
+                [
+                    { text: "Hủy", style: "cancel" },
+                    {
+                        text: "Xóa",
+                        style: "destructive",
+                        onPress: performDelete,
                     },
-                },
-            ]
-        );
+                ]
+            );
+        }
     };
 
+    // ✅ UPDATE: Chuyển hướng sang trang thanh toán
     const handleCheckout = () => {
         if (selectedItems.length === 0) {
-            Alert.alert("Thông báo", "Vui lòng chọn sản phẩm để thanh toán.");
+            const msg = "Vui lòng chọn sản phẩm để thanh toán.";
+            Platform.OS === 'web' ? alert(msg) : Alert.alert("Thông báo", msg);
             return;
         }
-        Alert.alert("Thanh toán thành công", `Tổng tiền: ${formatPrice(selectedTotal)}`);
+        
+        // Chuyển sang màn hình checkout, truyền theo danh sách ID các sản phẩm đã chọn
+        router.push({
+            pathname: "/checkout",
+            params: { itemIds: JSON.stringify(selectedItems) }
+        });
     };
 
+    // ✅ FIX: Xử lý Alert riêng cho Web và Mobile
     const handleClearCart = () => {
         if (cartItems.length === 0) return;
-        Alert.alert("Xóa giỏ hàng", "Bạn có chắc muốn xóa tất cả?", [
-            { text: "Hủy", style: "cancel" },
-            {
-                text: "Xóa tất cả",
-                style: "destructive",
-                onPress: () => {
-                    clearCart();
-                    showToast("Đã xóa toàn bộ giỏ hàng");
+
+        const performClear = () => {
+            clearCart();
+            showToast("Đã xóa toàn bộ giỏ hàng");
+        };
+
+        if (Platform.OS === 'web') {
+            if (window.confirm("Bạn có chắc muốn xóa tất cả?")) {
+                performClear();
+            }
+        } else {
+            Alert.alert("Xóa giỏ hàng", "Bạn có chắc muốn xóa tất cả?", [
+                { text: "Hủy", style: "cancel" },
+                {
+                    text: "Xóa tất cả",
+                    style: "destructive",
+                    onPress: performClear,
                 },
-            },
-        ]);
+            ]);
+        }
     };
 
     // Lọc sản phẩm gợi ý
@@ -165,7 +161,8 @@ export default function CartScreen() {
         if (!source) return { uri: 'https://via.placeholder.com/100' };
         if (typeof source === 'number') return source;
         if (typeof source === 'string') return { uri: source };
-        return source;
+        if (source && typeof source === 'object') return source;
+        return require('../assets/products/placeholder.png');
     };
 
     return (
@@ -200,11 +197,15 @@ export default function CartScreen() {
                             <View style={styles.emptyCart}>
                                 <Text style={styles.emptyCartIcon}>🛒</Text>
                                 <Text style={styles.emptyCartTitle}>Giỏ hàng trống</Text>
+                                <Text style={styles.emptyCartText}>
+                                    Hãy thêm sản phẩm vào giỏ hàng để bắt đầu mua sắm!
+                                </Text>
+                                {/* Nút thêm nhanh sản phẩm mẫu để test */}
                                 <TouchableOpacity
                                     style={styles.shopButton}
-                                    onPress={() => addToCart(MOCK_PRODUCTS[0])}
+                                    onPress={() => addToCart(MOCK_PRODUCTS[0] || { id: 'test1', name: 'Sản phẩm Test', price: 100000, quantity: 1, imageUri: 'https://via.placeholder.com/150' })}
                                 >
-                                    <Text style={styles.shopButtonText}>Thêm sản phẩm mẫu</Text>
+                                    <Text style={styles.shopButtonText}>+ Thêm sản phẩm mẫu</Text>
                                 </TouchableOpacity>
                             </View>
                         ) : (
@@ -417,6 +418,7 @@ const styles = StyleSheet.create({
     emptyCart: { alignItems: "center", justifyContent: "center", paddingVertical: 60 },
     emptyCartIcon: { fontSize: 60, marginBottom: 20 },
     emptyCartTitle: { fontSize: 20, fontWeight: "bold", color: COLORS.text, marginBottom: 8 },
+    emptyCartText: { fontSize: 14, color: COLORS.subText, textAlign: "center", marginBottom: 20, paddingHorizontal: 40 },
     shopButton: { backgroundColor: COLORS.primary, paddingHorizontal: 30, paddingVertical: 10, borderRadius: 8 },
     shopButtonText: { color: "white", fontWeight: "bold", fontSize: 16 },
     suggestSection: { marginTop: 20, marginBottom: 20 },
