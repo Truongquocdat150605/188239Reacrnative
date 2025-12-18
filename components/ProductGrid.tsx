@@ -143,11 +143,6 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
     const gap = 15;
     const totalGap = gap * (numColumns - 1);
     
-    // Chiều rộng card = (Tổng màn hình - Lề 2 bên - Tổng khoảng cách giữa) / Số cột
-    // Ở đây ta dùng (width - containerPadding*2 - totalGap) nếu full width
-    // Hoặc (maxGridWidth - totalGap) nếu bị giới hạn 1200
-    
-    // Tính toán lại cardWidth dựa trên vùng hiển thị thực tế
     const availableWidth = width > maxGridWidth ? maxGridWidth : (width - containerPadding * 2);
     const cardWidth = (availableWidth - totalGap) / numColumns;
 

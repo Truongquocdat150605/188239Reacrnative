@@ -12,9 +12,12 @@ import {
 } from 'react-native';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { useRouter } from "expo-router";
-import { MOCK_USERS } from '../lib/users';
+// import { MOCK_USERS } from '../lib/users';
 import { useAuth } from '../lib/AuthContext';
-
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "./firebaseConfig";
+import { useGoogleLogin } from "./services/googleAuth"
 export default function LoginScreen() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -23,6 +26,7 @@ export default function LoginScreen() {
 
     const router = useRouter();
     const { login } = useAuth();
+    const { loginWithGoogle } = useGoogleLogin();
 
     const handleLogin = async () => {
         if (!email.trim() || !password.trim()) {
@@ -30,33 +34,52 @@ export default function LoginScreen() {
             return;
         }
 
-        setIsLoading(true);
+        try {
+            setIsLoading(true);
 
-        setTimeout(async () => {
-            setIsLoading(false);
-
-            // Tìm user trong mock DB
-            const foundUser = MOCK_USERS.find(
-                u => u.email.toLowerCase() === email.toLowerCase() && u.password === password
+            // 🔐 Đăng nhập Firebase Auth
+            const userCredential = await signInWithEmailAndPassword(
+                auth,
+                email,
+                password
             );
 
-            if (foundUser) {
-                // Cập nhật Global State thông qua Context
-                login({
-                    name: foundUser.name,
-                    email: foundUser.email,
-                    phone: '0901234567', // Mock phone vì MOCK_USERS chưa có
-                    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(foundUser.name)}&background=0A84FF&color=fff`
-                });
+            const user = userCredential.user;
 
-                Alert.alert('🎉 Thành công', `Chào mừng ${foundUser.name}!`);
-                router.replace('/home'); // Chuyển sang Tabs chính
-            } else {
-                Alert.alert('❌ Đăng nhập thất bại', 'Email hoặc mật khẩu không chính xác');
+            // 📄 Lấy thông tin user từ Firestore
+            const userRef = doc(db, "users", user.uid);
+            const userSnap = await getDoc(userRef);
+
+            if (!userSnap.exists()) {
+                Alert.alert("Lỗi", "Không tìm thấy thông tin người dùng trong database");
+                return;
             }
 
-        }, 1500);
+            const userData = userSnap.data();
+
+            // 🌍 Cập nhật Global Auth Context
+            login({
+                name: userData.name,
+                email: userData.email,
+                phone: userData.phone,
+                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                    userData.name
+                )}&background=0A84FF&color=fff`,
+            });
+
+            Alert.alert('🎉 Thành công', `Chào mừng ${userData.name}!`);
+            router.replace('/home');
+
+        } catch (error: any) {
+            Alert.alert(
+                '❌ Đăng nhập thất bại',
+                error.message || 'Email hoặc mật khẩu không đúng'
+            );
+        } finally {
+            setIsLoading(false);
+        }
     };
+
 
 
     const handleRegister = () => {
@@ -66,10 +89,10 @@ export default function LoginScreen() {
     const handleSocialLogin = (provider: string) => {
         Alert.alert('Thông báo', `Đang đăng nhập bằng ${provider}... (Chức năng chưa tích hợp API)`);
     };
-    
+
     // Chuyển hướng sang màn hình Quên Mật Khẩu
     const handleForgotPassword = () => {
-        router.push('/forgot-password'); 
+        router.push('/forgot-password');
     };
 
     return (
@@ -153,12 +176,11 @@ export default function LoginScreen() {
                 <View style={styles.socialRow}>
                     <TouchableOpacity
                         style={styles.socialButton}
-                        onPress={() => handleSocialLogin('Google')}
-                        disabled={isLoading}
+                        onPress={loginWithGoogle}
                     >
-                        <Text style={styles.socialText}>G</Text>
-                        <Text style={styles.socialButtonText}>Google</Text>
+                        <Text>Google</Text>
                     </TouchableOpacity>
+
                     <TouchableOpacity
                         style={styles.socialButton}
                         onPress={() => handleSocialLogin('Facebook')}

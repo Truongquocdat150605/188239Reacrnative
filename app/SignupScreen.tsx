@@ -11,8 +11,12 @@ import {
 } from 'react-native';
 import { User, Eye, EyeOff, Check, X } from 'lucide-react-native';
 import { Link, useRouter } from "expo-router"; // Thêm useRouter
-import { addUser } from '../lib/users';
-import { saveUserSession } from "../utils/auth";
+// import { addUser } from '../lib/users';
+// import { saveUserSession } from "../utils/auth";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
+import { auth, db } from "./firebaseConfig";
+
 interface ValidationErrors {
     name?: string;
     email?: string;
@@ -138,7 +142,7 @@ export default function SignupScreen() {
         return Object.keys(newErrors).length === 0;
     };
 
-  const handleSignup = async () => {
+const handleSignup = async () => {
     setTouched({ name: true, email: true, password: true, confirmPassword: true });
 
     if (!agreeToTerms) {
@@ -146,26 +150,42 @@ export default function SignupScreen() {
         return;
     }
 
-    if (validateForm()) {
+    if (!validateForm()) return;
+
+    try {
         setIsLoading(true);
 
-        setTimeout(async () => { // <-- thêm async
-            setIsLoading(false);
+        // 1️⃣ Tạo user Firebase Auth
+        const userCredential = await createUserWithEmailAndPassword(
+            auth,
+            email.trim().toLowerCase(),
+            password
+        );
 
-            const newUser = {
-                email: email.toLowerCase(),
-                password: password,
-                name: name,
-            };
+        const uid = userCredential.user.uid;
 
-            addUser(newUser);
+        // 2️⃣ Tạo document Firestore (ID = UID)
+        await setDoc(doc(db, "users", uid), {
+            name: name.trim(),
+            email: email.trim().toLowerCase(),
+            phone: "",
+            role: "user",
+            createdAt: new Date(),
+        });
 
-            await saveUserSession(newUser); // <-- giờ dùng được await
+        Alert.alert("🎉 Thành công", "Đăng ký thành công! Vui lòng đăng nhập.");
+        router.replace("/login");
 
-            router.replace('/login'); // chuyển qua Home sau khi đăng ký thành công
-        }, 1500);
+    } catch (error: any) {
+        Alert.alert(
+            "❌ Đăng ký thất bại",
+            error.message || "Có lỗi xảy ra"
+        );
+    } finally {
+        setIsLoading(false);
     }
 };
+
 
     const handleSocialSignup = (provider: string) => {
         Alert.alert('Thông báo', `Đăng ký bằng ${provider}`);

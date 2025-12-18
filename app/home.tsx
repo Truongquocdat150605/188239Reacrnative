@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -8,10 +7,9 @@ import {
     ScrollView,
     TouchableOpacity,
     Alert
-
 } from 'react-native';
 import { useRouter } from "expo-router";
-import { MessageCircle } from 'lucide-react-native'; // 🆕 Import Icon chat
+import { MessageCircle } from 'lucide-react-native';
 
 // Components
 import { Header } from '../components/Header';
@@ -21,22 +19,39 @@ import { CategoryGrid } from '../components/CategoryGrid';
 import { ProductGrid } from '../components/ProductGrid';
 
 import { COLORS } from '../theme/colors';
-import { MOCK_PRODUCTS } from '../constants/mockProducts';
-import { useCart } from '../lib/CartContext'; // 🆕 IMPORT CART CONTEXT
-import { useNotification } from '../lib/NotificationContext'; // 🆕 IMPORT NOTIFICATION CONTEXT
+import { useCart } from '../lib/CartContext';
+import { useNotification } from '../lib/NotificationContext';
+
+// ✅ SERVICE FIRESTORE (đường dẫn của bạn đã đúng)
+import { getAllProducts } from '../app/services/productService';
 
 export default function HomeScreen() {
     const router = useRouter();
 
-    // 🆕 LẤY CONTEXT
     const { addToCart, cartCount } = useCart();
     const { unreadCount } = useNotification();
-    
+
     const [searchText, setSearchText] = useState("");
-    
-    // 🟢 SỬA LOGIC: Không dùng state local để lọc nữa, mà chuyển trang
+    const [products, setProducts] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    // ✅ LOAD PRODUCTS TỪ FIRESTORE
+    useEffect(() => {
+        const loadProducts = async () => {
+            try {
+                const data = await getAllProducts();
+                setProducts(data);
+            } catch (error) {
+                console.log("Lỗi load products:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadProducts();
+    }, []);
+
     const handleCategoryPress = (category: any) => {
-        // Chuyển sang trang danh mục riêng
         router.push({
             pathname: "/category/[id]",
             params: { id: category.type }
@@ -55,24 +70,29 @@ export default function HomeScreen() {
         Alert.alert("Thành công", `Đã thêm "${product.name}" vào giỏ`);
     };
 
-    // 🆕 LỌC SẢN PHẨM (Chỉ dùng cho search bar ở Home)
-    const filteredProducts = MOCK_PRODUCTS.filter(p => {
+    // ✅ SEARCH TRÊN DATA FIRESTORE
+    const filteredProducts = products.filter(p => {
         const text = searchText.toLowerCase();
         return (
-            p.name.toLowerCase().includes(text) ||
+            p.name?.toLowerCase().includes(text) ||
             p.specifications?.material?.toLowerCase().includes(text)
         );
     });
 
     return (
         <SafeAreaView style={styles.safeArea}>
-
             <Header cartCount={cartCount} notificationCount={unreadCount} />
 
             <SearchBar
                 value={searchText}
                 onChangeText={setSearchText}
             />
+
+            {loading && (
+                <View style={{ padding: 20 }}>
+                    <Text>Đang tải sản phẩm...</Text>
+                </View>
+            )}
 
             <ScrollView
                 style={styles.scrollView}
@@ -86,31 +106,27 @@ export default function HomeScreen() {
                 <View style={styles.sectionMargin}>
                     <CategoryGrid
                         onCategoryPress={handleCategoryPress}
-                        selectedCategory={null} // Không highlight ở Home nữa
+                        selectedCategory={null}
                     />
                 </View>
 
-                {/* PRODUCT GRID - Hiển thị sản phẩm nổi bật hoặc kết quả tìm kiếm */}
                 <View style={styles.sectionMargin}>
                     <ProductGrid
                         title={searchText ? "Kết quả tìm kiếm" : "Gợi ý cho bạn"}
-                        products={searchText ? filteredProducts : MOCK_PRODUCTS}
+                        products={searchText ? filteredProducts : products}
                         onProductPress={handleProductPress}
                         onAddToCart={handleAddToCart}
-                        // onSeeAllPress={() => handleCategoryPress({ type: 'all' })}
                     />
                 </View>
-
             </ScrollView>
 
-            <TouchableOpacity 
+            <TouchableOpacity
                 style={styles.chatButton}
                 onPress={() => router.push('/chat')}
                 activeOpacity={0.8}
             >
                 <MessageCircle size={28} color="white" fill="white" />
             </TouchableOpacity>
-
         </SafeAreaView>
     );
 }
