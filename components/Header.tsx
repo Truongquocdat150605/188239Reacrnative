@@ -1,35 +1,36 @@
 import React from 'react';
-import { 
-    View, 
-    Text, 
-    TouchableOpacity, 
-    StyleSheet, 
+import {
+    View,
+    Text,
+    TouchableOpacity,
+    StyleSheet,
     SafeAreaView,
-    Image 
+    Image
 } from 'react-native';
 import { ShoppingCart, Bell, ArrowLeft } from 'lucide-react-native';
-import { COLORS } from '../theme/colors';
 import { useRouter } from 'expo-router';
+import { COLORS } from '../theme/colors';
 
-// 🟢 ĐỊNH NGHĨA TYPE CHO HEADER PROPS
+// 🔥 CONTEXT
+import { useNotification } from '../lib/NotificationContext';
+import { useCart } from '../lib/CartContext';
+
+// ================== TYPES ==================
 type HeaderProps = {
-    cartCount?: number;
-    notificationCount?: number;
     showBackButton?: boolean;
     title?: string;
 };
 
-// ⭐ Props Header Icon
 type HeaderIconProps = {
-    IconComponent: React.ComponentType<any>; 
+    IconComponent: React.ComponentType<any>;
     count: number;
     onPress: () => void;
 };
 
+// ================== ICON WITH BADGE ==================
 const HeaderIcon: React.FC<HeaderIconProps> = ({ IconComponent, count, onPress }) => (
     <TouchableOpacity style={styles.iconButton} onPress={onPress}>
         <IconComponent size={24} color={COLORS.text} />
-
         {count > 0 && (
             <View style={styles.badge}>
                 <Text style={styles.badgeText}>
@@ -40,59 +41,61 @@ const HeaderIcon: React.FC<HeaderIconProps> = ({ IconComponent, count, onPress }
     </TouchableOpacity>
 );
 
-// ⭐ Header chính
+// ================== HEADER ==================
 export const Header: React.FC<HeaderProps> = ({
-    cartCount = 0,
-    notificationCount = 0,
     showBackButton = false,
-    title = "JEWELRY",
+    title = 'JEWELRY',
 }) => {
     const router = useRouter();
+
+    // 🔥 LẤY DATA THẬT TỪ CONTEXT
+    const { unreadCount } = useNotification();
+    const { cartCount } = useCart();
 
     return (
         <SafeAreaView style={styles.safeArea}>
             <View style={styles.headerContainer}>
 
-                {/* 🔙 Nút Back */}
+                {/* 🔙 BACK */}
                 {showBackButton ? (
-                    <TouchableOpacity 
-                        onPress={() => router.back()} 
+                    <TouchableOpacity
+                        onPress={() => router.back()}
                         style={styles.backButton}
                     >
                         <ArrowLeft size={26} color={COLORS.text} />
                     </TouchableOpacity>
                 ) : (
-                    <View style={{ width: 30 }} /> // giữ cân bằng layout
+                    <View style={{ width: 30 }} />
                 )}
 
-                {/* 🏷️ Tiêu đề */}
+                {/* 🏷️ TITLE */}
                 <Text style={styles.logoText}>{title}</Text>
 
-                {/* Nhóm Icon */}
+                {/* 🔔 ICON GROUP */}
                 <View style={styles.iconGroup}>
 
-                    {/* Chuông */}
+                    {/* 🔔 THÔNG BÁO */}
                     <HeaderIcon
                         IconComponent={Bell}
-                        count={notificationCount}
+                        count={unreadCount}
                         onPress={() => router.push('/notifications')}
                     />
 
-                    {/* Giỏ hàng + Badge */}
+                    {/* 🛒 GIỎ HÀNG */}
                     <HeaderIcon
                         IconComponent={ShoppingCart}
-                        count={cartCount}
+                        count={cartCount ?? 0}
                         onPress={() => router.push('/cart')}
                     />
 
-                    {/* 🆕 AVATAR PROFILE */}
-                    <TouchableOpacity 
-                        style={styles.avatarButton} 
+                    {/* 👤 PROFILE */}
+                    <TouchableOpacity
+                        style={styles.avatarButton}
                         onPress={() => router.push('/profile')}
                     >
-                        <Image 
-                            source={{ uri: 'https://i.pravatar.cc/150?img=68' }} 
-                            style={styles.avatar} 
+                        <Image
+                            source={{ uri: 'https://i.pravatar.cc/150?img=68' }}
+                            style={styles.avatar}
                         />
                     </TouchableOpacity>
                 </View>
@@ -101,8 +104,7 @@ export const Header: React.FC<HeaderProps> = ({
     );
 };
 
-// ================= Styles =================
-
+// ================== STYLES ==================
 const styles = StyleSheet.create({
     safeArea: {
         backgroundColor: COLORS.background,
@@ -150,15 +152,14 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         fontSize: 10,
     },
-    // Style cho Avatar
     avatarButton: {
         marginLeft: 16,
     },
     avatar: {
         width: 32,
         height: 32,
-        borderRadius: 16, // Tròn
+        borderRadius: 16,
         borderWidth: 1,
         borderColor: COLORS.lightText,
-    }
+    },
 });

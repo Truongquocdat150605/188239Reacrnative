@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import {
     View,
@@ -13,19 +12,15 @@ import {
     KeyboardAvoidingView,
 } from "react-native";
 import { useRouter } from "expo-router";
-// Thư viện để xử lý tai thỏ / home indicator
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { COLORS } from "../theme/colors";
-// Import hook từ context thực tế của bạn
 import { useCart } from "../lib/CartContext";
-import { MOCK_PRODUCTS } from "../constants/mockProducts";
 
 export default function CartScreen() {
     const router = useRouter();
-    const insets = useSafeAreaInsets(); // Lấy khoảng cách an toàn
+    const insets = useSafeAreaInsets();
 
-    // --- SỬ DỤNG CONTEXT (Dữ liệu thật) ---
     const {
         cartItems,
         removeFromCart,
@@ -38,421 +33,259 @@ export default function CartScreen() {
     const [notes, setNotes] = useState<Record<string, string>>({});
     const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-    // Đồng bộ lại selectedItems khi cart thay đổi (để tránh lỗi chọn item đã xóa)
+    /** 🔄 Giữ chọn đúng item còn tồn tại */
     useEffect(() => {
-        // Chỉ giữ lại những item còn tồn tại trong giỏ hàng
-        setSelectedItems(prev => prev.filter(id => cartItems.some(item => item.id === id)));
+        setSelectedItems((prev) => prev.filter(id => cartItems.some(i => i.id === id)));
     }, [cartItems]);
-
-    // --- CÁC HÀM XỬ LÝ SỰ KIỆN ---
-    const showToast = (message: string) => {
-        setToastMessage(message);
-        setTimeout(() => setToastMessage(null), 2000);
-    };
 
     const isAllSelected = cartItems.length > 0 && selectedItems.length === cartItems.length;
 
+    /** 💰 Tính tổng */
     const selectedTotal = useMemo(() =>
         cartItems.reduce((sum, item) => {
-            if (!selectedItems.includes(item.id)) return sum;
-            return sum + item.price * item.quantity;
+            const key = item.id; // id đã bao gồm size
+            const price = item.price ?? 0; // tránh undefined
+            const qty = item.quantity ?? 1;
+
+            return selectedItems.includes(key) ? sum + price * qty : sum;
         }, 0),
         [cartItems, selectedItems]
     );
 
-    const formatPrice = (price: number) => {
-        return price.toLocaleString("vi-VN") + "₫";
-    };
 
+    const formatPrice = (price: number) =>
+        price.toLocaleString("vi-VN") + "₫";
+
+    /** 🔘 Chọn từng item */
     const toggleSelectItem = (id: string) => {
-        setSelectedItems((prev) =>
-            prev.includes(id) ? prev.filter((itemId) => itemId !== id) : [...prev, id]
+        setSelectedItems(prev =>
+            prev.includes(id) ? prev.filter(itemId => itemId !== id) : [...prev, id]
         );
     };
 
+    /** 🔘 Chọn tất cả */
     const toggleSelectAll = () => {
-        if (isAllSelected) {
-            setSelectedItems([]);
-        } else {
-            setSelectedItems(cartItems.map((item) => item.id));
-        }
+        setSelectedItems(isAllSelected ? [] : cartItems.map(item => item.id));
     };
 
-    // ✅ FIX: Xử lý Alert riêng cho Web và Mobile
+    /** ❌ Xóa SP đúng với size */
     const handleRemoveItem = (id: string, name: string) => {
-        const performDelete = () => {
-            removeFromCart(id);
-            showToast(`Đã xóa "${name}"`);
-        };
+        const confirmDelete = () => removeFromCart(id);
 
         if (Platform.OS === 'web') {
-            // Trên Web dùng window.confirm
-            if (window.confirm(`Bạn có chắc muốn xóa "${name}"?`)) {
-                performDelete();
-            }
+            if (window.confirm(`Xóa "${name}" khỏi giỏ?`)) confirmDelete();
         } else {
-            // Trên Mobile dùng Alert
-            Alert.alert(
-                "Xóa sản phẩm",
-                `Bạn có chắc muốn xóa "${name}"?`,
-                [
-                    { text: "Hủy", style: "cancel" },
-                    {
-                        text: "Xóa",
-                        style: "destructive",
-                        onPress: performDelete,
-                    },
-                ]
-            );
+            Alert.alert("Xóa sản phẩm", `Xóa "${name}"?`, [
+                { text: "Hủy", style: "cancel" },
+                { text: "Xóa", onPress: confirmDelete, style: "destructive" },
+            ]);
         }
     };
 
-    // ✅ UPDATE: Chuyển hướng sang trang thanh toán
+    /** 💳 Thanh toán */
     const handleCheckout = () => {
         if (selectedItems.length === 0) {
             const msg = "Vui lòng chọn sản phẩm để thanh toán.";
             Platform.OS === 'web' ? alert(msg) : Alert.alert("Thông báo", msg);
             return;
         }
-        
-        // Chuyển sang màn hình checkout, truyền theo danh sách ID các sản phẩm đã chọn
+
+        // 👉 TRUYỀN DANH SÁCH ID MỖI ITEM (HỖ TRỢ CẢ ID + SIZE)
+        const encoded = JSON.stringify(selectedItems);
+
         router.push({
             pathname: "/checkout",
-            params: { itemIds: JSON.stringify(selectedItems) }
+            params: { itemIds: encoded }
         });
     };
 
-    // ✅ FIX: Xử lý Alert riêng cho Web và Mobile
-    const handleClearCart = () => {
-        if (cartItems.length === 0) return;
-
-        const performClear = () => {
-            clearCart();
-            showToast("Đã xóa toàn bộ giỏ hàng");
-        };
-
-        if (Platform.OS === 'web') {
-            if (window.confirm("Bạn có chắc muốn xóa tất cả?")) {
-                performClear();
-            }
-        } else {
-            Alert.alert("Xóa giỏ hàng", "Bạn có chắc muốn xóa tất cả?", [
-                { text: "Hủy", style: "cancel" },
-                {
-                    text: "Xóa tất cả",
-                    style: "destructive",
-                    onPress: performClear,
-                },
-            ]);
-        }
-    };
-
-    // Lọc sản phẩm gợi ý
-    const suggestedProducts = MOCK_PRODUCTS.filter(
-        (p) => !cartItems.some((item) => item.id === p.id)
-    ).slice(0, 5);
-
-    const handleAddSuggested = (product: any) => {
-        addToCart(product);
-        showToast(`Đã thêm "${product.name}"`);
-    };
-
-    const getImageSource = (source: any) => {
-        if (!source) return { uri: 'https://via.placeholder.com/100' };
-        if (typeof source === 'number') return source;
-        if (typeof source === 'string') return { uri: source };
-        if (source && typeof source === 'object') return source;
-        return require('../assets/products/placeholder.png');
-    };
 
     return (
         <View style={styles.container}>
-            {/* HEADER: Dùng padding insets.top để tránh bị che */}
-            <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 10 }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            {/* ===== HEADER ===== */}
+            <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+                <TouchableOpacity onPress={() => router.back()}>
                     <Text style={styles.backIcon}>←</Text>
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Giỏ Hàng ({cartItems.length})</Text>
                 {cartItems.length > 0 ? (
-                    <TouchableOpacity onPress={handleClearCart}>
+                    <TouchableOpacity onPress={clearCart}>
                         <Text style={styles.clearText}>Xóa hết</Text>
                     </TouchableOpacity>
-                ) : (
-                    <View style={{ width: 50 }} />
-                )}
+                ) : <View style={{ width: 50 }} />}
             </View>
 
-            {/* MAIN CONTENT */}
-            <KeyboardAvoidingView 
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                style={{ flex: 1 }}
-            >
-                <View style={styles.content}>
-                    <ScrollView
-                        showsVerticalScrollIndicator={false}
-                        style={styles.scrollView}
-                        contentContainerStyle={styles.scrollContent}
-                    >
-                        {cartItems.length === 0 ? (
-                            <View style={styles.emptyCart}>
-                                <Text style={styles.emptyCartIcon}>🛒</Text>
-                                <Text style={styles.emptyCartTitle}>Giỏ hàng trống</Text>
-                                <Text style={styles.emptyCartText}>
-                                    Hãy thêm sản phẩm vào giỏ hàng để bắt đầu mua sắm!
-                                </Text>
-                                {/* Nút thêm nhanh sản phẩm mẫu để test */}
-                                <TouchableOpacity
-                                    style={styles.shopButton}
-                                    onPress={() => addToCart(MOCK_PRODUCTS[0] || { id: 'test1', name: 'Sản phẩm Test', price: 100000, quantity: 1, imageUri: 'https://via.placeholder.com/150' })}
-                                >
-                                    <Text style={styles.shopButtonText}>+ Thêm sản phẩm mẫu</Text>
-                                </TouchableOpacity>
-                            </View>
-                        ) : (
-                            <>
-                                {cartItems.map((item) => {
-                                    const isSelected = selectedItems.includes(item.id);
-                                    return (
-                                        <View key={item.id} style={styles.itemContainer}>
-                                            <TouchableOpacity
-                                                style={styles.checkboxWrapper}
-                                                onPress={() => toggleSelectItem(item.id)}
-                                            >
-                                                <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
-                                                    {isSelected && <Text style={styles.checkboxTick}>✓</Text>}
-                                                </View>
-                                            </TouchableOpacity>
+            {/* ===== BODY ===== */}
+            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+                <ScrollView contentContainerStyle={styles.scrollContainer}>
 
-                                            <Image
-                                                source={getImageSource(item.imageUri)}
-                                                style={styles.itemImage}
-                                                resizeMode="contain"
-                                            />
+                    {cartItems.length === 0 ? (
+                        <View style={styles.emptyBox}>
+                            <Text style={styles.emptyIcon}>🛒</Text>
+                            <Text style={styles.emptyText}>Giỏ hàng của bạn đang trống</Text>
+                        </View>
+                    ) : cartItems.map((item) => {
+                        const selected = selectedItems.includes(item.id);
 
-                                            <View style={styles.itemInfo}>
-                                                <Text numberOfLines={2} style={styles.itemName}>{item.name}</Text>
-                                                <Text style={styles.itemPrice}>{formatPrice(item.price)}</Text>
-
-                                                <TextInput
-                                                    style={styles.noteInput}
-                                                    placeholder="Ghi chú..."
-                                                    value={notes[item.id] || ""}
-                                                    onChangeText={(text) =>
-                                                        setNotes((prev) => ({ ...prev, [item.id]: text }))
-                                                    }
-                                                />
-
-                                                <View style={styles.quantityRow}>
-                                                    <View style={styles.quantityContainer}>
-                                                        <TouchableOpacity
-                                                            style={styles.quantityButton}
-                                                            onPress={() => {
-                                                                if (item.quantity > 1) {
-                                                                    updateQuantity(item.id, item.quantity - 1);
-                                                                } else {
-                                                                    handleRemoveItem(item.id, item.name);
-                                                                }
-                                                            }}
-                                                        >
-                                                            <Text style={styles.quantityButtonText}>-</Text>
-                                                        </TouchableOpacity>
-                                                        <Text style={styles.quantityText}>{item.quantity}</Text>
-                                                        <TouchableOpacity
-                                                            style={styles.quantityButton}
-                                                            onPress={() => updateQuantity(item.id, item.quantity + 1)}
-                                                        >
-                                                            <Text style={styles.quantityButtonText}>+</Text>
-                                                        </TouchableOpacity>
-                                                    </View>
-
-                                                    <TouchableOpacity onPress={() => handleRemoveItem(item.id, item.name)}>
-                                                        <Text style={styles.removeText}>Xóa</Text>
-                                                    </TouchableOpacity>
-                                                </View>
-                                            </View>
-                                        </View>
-                                    );
-                                })}
-
-                                {suggestedProducts.length > 0 && (
-                                    <View style={styles.suggestSection}>
-                                        <Text style={styles.suggestTitle}>Có thể bạn cũng thích</Text>
-                                        <ScrollView
-                                            horizontal
-                                            showsHorizontalScrollIndicator={false}
-                                            contentContainerStyle={styles.horizontalScrollContent}
-                                        >
-                                            {suggestedProducts.map((p) => (
-                                                <View key={p.id} style={styles.suggestCard}>
-                                                    <Image 
-                                                        source={getImageSource(p.imageUri)} 
-                                                        style={styles.suggestImage}
-                                                        resizeMode="cover"
-                                                    />
-                                                    <Text numberOfLines={2} style={styles.suggestName}>{p.name}</Text>
-                                                    <Text style={styles.suggestPrice}>{formatPrice(p.price)}</Text>
-                                                    <TouchableOpacity
-                                                        style={styles.suggestBtn}
-                                                        onPress={() => handleAddSuggested(p)}
-                                                    >
-                                                        <Text style={styles.suggestBtnText}>+ Thêm</Text>
-                                                    </TouchableOpacity>
-                                                </View>
-                                            ))}
-                                        </ScrollView>
+                        return (
+                            <View key={item.id} style={styles.itemBox}>
+                                {/* Chọn SP */}
+                                <TouchableOpacity onPress={() => toggleSelectItem(item.id)}>
+                                    <View style={[styles.checkbox, selected && styles.checkboxChecked]}>
+                                        {selected && <Text style={styles.checkmark}>✓</Text>}
                                     </View>
-                                )}
-                            </>
-                        )}
-                    </ScrollView>
-                </View>
+                                </TouchableOpacity>
+
+                                {/* ẢNH */}
+                                <Image
+                                    source={
+                                        item.image ? { uri: item.image }
+                                            : require("../assets/products/placeholder.png")
+                                    }
+                                    style={styles.itemImage}
+                                    resizeMode="cover"
+                                />
+
+                                {/* THÔNG TIN */}
+                                <View style={styles.itemInfo}>
+                                    <Text numberOfLines={2} style={styles.itemName}>
+                                        {item.name} {item.size ? `(Size: ${item.size})` : ""}
+                                    </Text>
+                                    <Text style={styles.itemPrice}>{formatPrice(item.price)}</Text>
+
+                                    {/* Ghi chú */}
+                                    <TextInput
+                                        style={styles.noteInput}
+                                        placeholder="Ghi chú cho shop..."
+                                        value={notes[item.id] || ""}
+                                        onChangeText={(text) => setNotes(prev => ({ ...prev, [item.id]: text }))}
+                                    />
+
+                                    {/* Số lượng */}
+                                    <View style={styles.qtyRow}>
+                                        <TouchableOpacity
+                                            style={styles.qtyBtn}
+                                            onPress={() =>
+                                                item.quantity > 1
+                                                    ? updateQuantity(item.id, item.quantity - 1)
+                                                    : handleRemoveItem(item.id, item.name)
+                                            }
+                                        >
+                                            <Text style={styles.qtyTextBtn}>-</Text>
+                                        </TouchableOpacity>
+
+                                        <Text style={styles.qtyNumber}>{item.quantity}</Text>
+
+                                        <TouchableOpacity
+                                            style={styles.qtyBtn}
+                                            onPress={() => updateQuantity(item.id, item.quantity + 1)}
+                                        >
+                                            <Text style={styles.qtyTextBtn}>+</Text>
+                                        </TouchableOpacity>
+
+                                        {/* Xóa */}
+                                        <TouchableOpacity onPress={() => handleRemoveItem(item.id, item.name)}>
+                                            <Text style={styles.removeText}>Xóa</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </View>
+                        );
+                    })}
+                </ScrollView>
             </KeyboardAvoidingView>
 
-            {/* FOOTER: Dùng padding insets.bottom để tránh bị che */}
+            {/* ===== FOOTER ===== */}
             {cartItems.length > 0 && (
-                <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-                    <View style={styles.footerTopRow}>
-                        <TouchableOpacity style={styles.footerSelectAll} onPress={toggleSelectAll}>
-                            <View style={[styles.checkbox, isAllSelected && styles.checkboxChecked]}>
-                                {isAllSelected && <Text style={styles.checkboxTick}>✓</Text>}
-                            </View>
-                            <Text style={styles.footerSelectAllText}>Tất cả ({cartItems.length})</Text>
-                        </TouchableOpacity>
-
-                        <View style={styles.footerTotal}>
-                            <Text style={styles.footerTotalLabel}>Tổng:</Text>
-                            <Text style={styles.footerTotalAmount}>{formatPrice(selectedTotal)}</Text>
+                <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
+                    <TouchableOpacity style={styles.selectAllRow} onPress={toggleSelectAll}>
+                        <View style={[styles.checkbox, isAllSelected && styles.checkboxChecked]}>
+                            {isAllSelected && <Text style={styles.checkmark}>✓</Text>}
                         </View>
+                        <Text style={styles.selectAllText}>Chọn tất cả</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.totalBox}>
+                        <Text style={styles.totalLabel}>Tổng:</Text>
+                        <Text style={styles.totalAmount}>{formatPrice(selectedTotal)}</Text>
                     </View>
 
                     <TouchableOpacity
-                        style={[
-                            styles.checkoutBtn,
-                            selectedItems.length === 0 && styles.checkoutBtnDisabled,
-                        ]}
+                        style={[styles.checkoutBtn, selectedItems.length === 0 && styles.checkoutDisabled]}
                         disabled={selectedItems.length === 0}
                         onPress={handleCheckout}
                     >
-                        <Text style={styles.checkoutText}>
-                            Mua ngay ({selectedItems.length})
-                        </Text>
+                        <Text style={styles.checkoutText}>Mua ngay</Text>
                     </TouchableOpacity>
-                </View>
-            )}
-
-            {/* TOAST */}
-            {toastMessage && (
-                <View style={[styles.toast, { bottom: 120 + insets.bottom }]}>
-                    <Text style={styles.toastText}>{toastMessage}</Text>
                 </View>
             )}
         </View>
     );
 }
 
+/* ========== STYLE ========== */
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: COLORS.background,
-    },
-    content: {
-        flex: 1,
-    },
+    container: { flex: 1, backgroundColor: COLORS.background },
     header: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        paddingHorizontal: 15,
-        paddingBottom: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.lightBackground,
-        backgroundColor: "white",
-        zIndex: 10,
+        flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+        backgroundColor: "white", paddingHorizontal: 15, paddingBottom: 10,
+        borderBottomWidth: 1, borderColor: COLORS.lightBackground
     },
-    backButton: { padding: 4 },
     backIcon: { fontSize: 22, color: COLORS.text },
-    headerTitle: { fontSize: 18, fontWeight: "bold", color: COLORS.text },
+    headerTitle: { fontSize: 18, fontWeight: "bold" },
     clearText: { color: COLORS.error, fontWeight: "600" },
-    scrollView: { flex: 1 },
-    scrollContent: { paddingHorizontal: 10, paddingTop: 10, paddingBottom: 20 },
-    horizontalScrollContent: { paddingHorizontal: 10 },
-    // ITEM
-    itemContainer: {
-        flexDirection: "row",
-        marginBottom: 12,
-        borderRadius: 10,
-        padding: 10,
-        backgroundColor: "white",
-        borderWidth: 1,
-        borderColor: COLORS.lightBackground,
+
+    emptyBox: { alignItems: "center", marginTop: 120 },
+    emptyIcon: { fontSize: 60 },
+    emptyText: { marginTop: 10, fontSize: 16, color: COLORS.subText },
+
+    scrollContainer: { padding: 12 },
+    itemBox: {
+        flexDirection: "row", backgroundColor: "white",
+        padding: 10, borderRadius: 10, marginBottom: 12,
+        borderWidth: 1, borderColor: COLORS.lightBackground
     },
-    checkboxWrapper: { justifyContent: "center", marginRight: 6 },
     checkbox: {
-        width: 22, height: 22, borderRadius: 4, borderWidth: 1.5,
-        borderColor: COLORS.subText, alignItems: "center", justifyContent: "center",
-        backgroundColor: "white",
+        width: 22, height: 22, borderRadius: 4, borderWidth: 2, borderColor: COLORS.subText,
+        justifyContent: "center", alignItems: "center", marginRight: 6,
     },
     checkboxChecked: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-    checkboxTick: { color: "white", fontSize: 16, fontWeight: "bold" },
-    itemImage: { width: 80, height: 80, borderRadius: 8, marginRight: 10, backgroundColor: '#f0f0f0' },
-    itemInfo: { flex: 1 },
-    itemName: { fontSize: 14, fontWeight: "600", color: COLORS.text, marginBottom: 4 },
-    itemPrice: { fontSize: 15, fontWeight: "bold", color: COLORS.primary, marginBottom: 6 },
-    noteInput: {
-        borderWidth: 1, borderColor: COLORS.lightBackground, borderRadius: 6,
-        paddingHorizontal: 8, paddingVertical: 4, fontSize: 12, marginBottom: 8,
-        backgroundColor: "#FAFAFA",
-    },
-    quantityRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-    quantityContainer: { flexDirection: "row", alignItems: "center" },
-    quantityButton: {
-        width: 28, height: 28, borderRadius: 14, borderWidth: 1,
-        borderColor: COLORS.lightBackground, justifyContent: "center", alignItems: "center",
-        backgroundColor: "#F5F5F5",
-    },
-    quantityButtonText: { fontSize: 16, fontWeight: "bold", color: COLORS.text },
-    quantityText: { marginHorizontal: 12, fontSize: 14, fontWeight: "600" },
-    removeText: { fontSize: 13, color: COLORS.error, fontWeight: "600" },
-    
-    // EMPTY & SUGGEST
-    emptyCart: { alignItems: "center", justifyContent: "center", paddingVertical: 60 },
-    emptyCartIcon: { fontSize: 60, marginBottom: 20 },
-    emptyCartTitle: { fontSize: 20, fontWeight: "bold", color: COLORS.text, marginBottom: 8 },
-    emptyCartText: { fontSize: 14, color: COLORS.subText, textAlign: "center", marginBottom: 20, paddingHorizontal: 40 },
-    shopButton: { backgroundColor: COLORS.primary, paddingHorizontal: 30, paddingVertical: 10, borderRadius: 8 },
-    shopButtonText: { color: "white", fontWeight: "bold", fontSize: 16 },
-    suggestSection: { marginTop: 20, marginBottom: 20 },
-    suggestTitle: { fontSize: 16, fontWeight: "bold", color: COLORS.text, marginBottom: 10, marginLeft: 4 },
-    suggestCard: { width: 140, marginRight: 10, borderRadius: 10, backgroundColor: "white", borderWidth: 1, borderColor: COLORS.lightBackground, padding: 8 },
-    suggestImage: { width: "100%", height: 80, borderRadius: 8, marginBottom: 6, backgroundColor: '#f0f0f0' },
-    suggestName: { fontSize: 12, fontWeight: "600", color: COLORS.text, marginBottom: 4 },
-    suggestPrice: { fontSize: 13, fontWeight: "bold", color: COLORS.primary, marginBottom: 6 },
-    suggestBtn: { backgroundColor: COLORS.primary, borderRadius: 6, paddingVertical: 6, alignItems: "center" },
-    suggestBtnText: { color: "white", fontSize: 12, fontWeight: "600" },
+    checkmark: { color: "white", fontWeight: "bold" },
 
-    // FOOTER
+    itemImage: { width: 80, height: 80, borderRadius: 8, backgroundColor: "#EEE", marginRight: 10 },
+    itemInfo: { flex: 1 },
+
+    itemName: { fontSize: 14, fontWeight: "600", marginBottom: 4 },
+    itemPrice: { fontSize: 15, fontWeight: "bold", color: COLORS.primary, marginBottom: 6 },
+
+    noteInput: {
+        borderWidth: 1, borderColor: "#DDD", borderRadius: 6,
+        padding: 6, marginBottom: 8, backgroundColor: "#FAFAFA", fontSize: 12
+    },
+
+    qtyRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+    qtyBtn: { width: 28, height: 28, justifyContent: "center", alignItems: "center", borderRadius: 6, backgroundColor: "#EEE" },
+    qtyTextBtn: { fontWeight: "bold", fontSize: 16 },
+    qtyNumber: { marginHorizontal: 10, fontSize: 14, fontWeight: "700" },
+    removeText: { color: COLORS.error, fontWeight: "600" },
+
     footer: {
-        backgroundColor: "white",
-        borderTopWidth: 1, borderTopColor: COLORS.lightBackground,
-        paddingHorizontal: 12, paddingTop: 10,
-        ...Platform.select({
-            ios: { shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 3 },
-            android: { elevation: 8 },
-            web: { boxShadow: '0 -2px 10px rgba(0,0,0,0.1)' }
-        }),
+        flexDirection: "row", alignItems: "center",
+        backgroundColor: "white", padding: 12,
+        borderTopWidth: 1, borderColor: COLORS.lightBackground
     },
-    footerTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-    footerSelectAll: { flexDirection: "row", alignItems: "center" },
-    footerSelectAllText: { marginLeft: 8, fontSize: 14, color: COLORS.text },
-    footerTotal: { alignItems: "flex-end" },
-    footerTotalLabel: { fontSize: 12, color: COLORS.subText },
-    footerTotalAmount: { fontSize: 16, fontWeight: "bold", color: COLORS.primary },
-    checkoutBtn: { marginTop: 4, backgroundColor: COLORS.primary, paddingVertical: 12, borderRadius: 8, alignItems: "center" },
-    checkoutBtnDisabled: { backgroundColor: "#CCCCCC" },
+    selectAllRow: { flexDirection: "row", alignItems: "center" },
+    selectAllText: { marginLeft: 8, fontSize: 14 },
+
+    totalBox: { flex: 1, alignItems: "flex-end", marginRight: 10 },
+    totalLabel: { fontSize: 12, color: COLORS.subText },
+    totalAmount: { fontSize: 18, fontWeight: "bold", color: COLORS.primary },
+
+    checkoutBtn: {
+        backgroundColor: COLORS.primary,
+        paddingVertical: 12, paddingHorizontal: 20,
+        borderRadius: 8,
+    },
+    checkoutDisabled: { backgroundColor: "#AAA" },
     checkoutText: { color: "white", fontSize: 15, fontWeight: "bold" },
-    toast: {
-        position: "absolute", alignSelf: "center", backgroundColor: "#000000CC",
-        paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, zIndex: 1000,
-    },
-    toastText: { color: "white", fontSize: 13 },
 });

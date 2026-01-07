@@ -1,12 +1,12 @@
 import React from 'react';
-import { 
-    View, 
-    Text, 
-    StyleSheet, 
-    FlatList, 
-    Image, 
-    TouchableOpacity, 
-    Alert 
+import {
+    View,
+    Text,
+    StyleSheet,
+    FlatList,
+    Image,
+    TouchableOpacity,
+    Alert
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,38 +30,42 @@ export default function WishlistScreen() {
     };
 
     const getImageSource = (source: any) => {
-        if (!source) return { uri: 'https://via.placeholder.com/100' };
+        if (!source || source === '') {
+            // Dùng placeholder online thay vì local file
+            return { uri: 'https://via.placeholder.com/100' };
+        }
         if (typeof source === 'number') return source;
         if (typeof source === 'string') return { uri: source };
         return source;
     };
-
     const renderItem = ({ item }: { item: any }) => (
-        <TouchableOpacity 
+        <TouchableOpacity
             style={styles.card}
             onPress={() => router.push({ pathname: '/productdetail', params: { id: item.id } })}
         >
-            <Image source={getImageSource(item.imageUri)} style={styles.image} />
-            
+            {/* Sửa dòng này: thay imageUri thành image */}
+            <Image source={getImageSource(item.image)} style={styles.image} />
+
             <View style={styles.content}>
                 <Text style={styles.name} numberOfLines={2}>{item.name}</Text>
-                <Text style={styles.price}>{item.price.toLocaleString('vi-VN')}₫</Text>
-                
-                <View style={styles.ratingRow}>
-                    <Text style={styles.rating}>⭐ {item.rating}</Text>
-                    <Text style={styles.review}>({item.reviewCount} đánh giá)</Text>
-                </View>
+                <Text style={styles.price}>{item.price?.toLocaleString('vi-VN')}₫</Text>
+
+                {/* TẠM THỜI ẨN hoặc sửa thành dữ liệu từ Firebase */}
+                {/* <View style={styles.ratingRow}>
+                <Text style={styles.rating}>⭐ {item.rating || "5.0"}</Text>
+                <Text style={styles.review}>({item.reviewCount || "0"} đánh giá)</Text>
+            </View> */}
             </View>
 
             <View style={styles.actions}>
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={styles.cartBtn}
                     onPress={() => handleAddToCart(item)}
                 >
                     <ShoppingCart size={20} color={COLORS.primary} />
                 </TouchableOpacity>
-                
-                <TouchableOpacity 
+
+                <TouchableOpacity
                     style={styles.deleteBtn}
                     onPress={() => removeFromWishlist(item.id)}
                 >
@@ -93,7 +97,7 @@ export default function WishlistScreen() {
                         <Heart size={60} color="#DDD" />
                         <Text style={styles.emptyTitle}>Danh sách yêu thích trống</Text>
                         <Text style={styles.emptyText}>Hãy thả tim các sản phẩm bạn yêu thích nhé!</Text>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             style={styles.shopBtn}
                             onPress={() => router.push('/home')}
                         >
@@ -123,7 +127,7 @@ const styles = StyleSheet.create({
     },
     backButton: { padding: 4 },
     headerTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.text },
-    
+
     listContent: {
         padding: 15,
     },
@@ -188,7 +192,7 @@ const styles = StyleSheet.create({
     deleteBtn: {
         padding: 8,
     },
-    
+
     // Empty State
     emptyState: {
         alignItems: 'center',

@@ -2,15 +2,15 @@ import React, { createContext, useContext, useState, ReactNode } from 'react';
 
 type Product = {
     id: string;
-    name: string;
-    price: number;
-    imageUri: any;
-    category: string;
-    rating: number;
-    reviewCount: number;
-    specifications: any;
-    originalPrice?: number;
+    name?: string;        // ✔ chuyển thành optional
+    price?: number;       // ✔ optional
+    image?: string;       // ✔ optional
+    type?: string;        // ✔ thêm field để khớp Firebase
+    sizes?: string[];
+    specifications?: any;
 };
+
+
 
 type WishlistContextType = {
     wishlistItems: Product[];

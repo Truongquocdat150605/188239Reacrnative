@@ -1,18 +1,14 @@
-
-// components/CategoryGrid.tsx
-
-import React from 'react';
-import { 
-    View, 
-    Text, 
-    StyleSheet, 
-    ScrollView, 
+import React, { useState, useEffect } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    ScrollView,
     TouchableOpacity,
-    Dimensions,
     useWindowDimensions
 } from 'react-native';
-import { MOCK_CATEGORIES } from '../constants/mockCategories';
 import { COLORS } from '../theme/colors';
+import { getAllProducts } from '../app/services/productService'; // 🔥 THÊM
 
 type Category = {
     id: string;
@@ -30,7 +26,7 @@ type CategoryCardProps = {
 
 const CategoryCard: React.FC<CategoryCardProps> = ({ category, onPress, isSelected = false }) => {
     return (
-        <TouchableOpacity 
+        <TouchableOpacity
             style={[
                 styles.categoryCard,
                 isSelected && styles.categoryCardSelected
@@ -40,13 +36,13 @@ const CategoryCard: React.FC<CategoryCardProps> = ({ category, onPress, isSelect
         >
             <View style={[
                 styles.iconContainer,
-                isSelected && styles.iconContainerSelected 
+                isSelected && styles.iconContainerSelected
             ]}>
                 <Text style={styles.iconText}>{category.icon}</Text>
             </View>
             <Text style={[
                 styles.categoryName,
-                isSelected && styles.categoryNameSelected 
+                isSelected && styles.categoryNameSelected
             ]} numberOfLines={1}>
                 {category.name}
             </Text>
@@ -62,54 +58,203 @@ type CategoryGridProps = {
     selectedCategory?: string | null;
 };
 
-export const CategoryGrid: React.FC<CategoryGridProps> = ({ 
+// 🔥 ICON MAPPING cho categories
+const CATEGORY_ICONS: Record<string, string> = {
+    'rings': '💍',
+    'necklaces': '📿',
+    'bracelets': '🪬',
+    'earrings': '👂',
+    'gold': '🟡',
+    'silver': '⚪',
+    'platinum': '🔘',
+    'diamonds': '💎',
+    'pearl': '🫧',
+    'luxury': '👑',
+    'men': '👨',
+    'women': '👩',
+    'couple': '👫',
+    'gift': '🎁',
+    'new': '🆕',
+    'sale': '🛒',
+    // Thêm các icon khác nếu cần
+};
+
+// 🔥 Hàm lấy icon tự động
+const getCategoryIcon = (categoryName: string): string => {
+    const lowerName = categoryName.toLowerCase();
+
+    // Kiểm tra từ khóa
+    if (lowerName.includes('nhẫn') || lowerName.includes('ring')) return '💍';
+    if (lowerName.includes('dây chuyền') || lowerName.includes('necklace')) return '📿';
+    if (lowerName.includes('vòng tay') || lowerName.includes('bracelet')) return '🪬';
+    if (lowerName.includes('bông tai') || lowerName.includes('earring')) return '👂';
+    if (lowerName.includes('vàng')) return '🟡';
+    if (lowerName.includes('bạc')) return '⚪';
+    if (lowerName.includes('kim cương') || lowerName.includes('diamond')) return '💎';
+    if (lowerName.includes('ngọc trai') || lowerName.includes('pearl')) return '🫧';
+    if (lowerName.includes('nam')) return '👨';
+    if (lowerName.includes('nữ')) return '👩';
+    if (lowerName.includes('đôi') || lowerName.includes('couple')) return '👫';
+    if (lowerName.includes('quà') || lowerName.includes('gift')) return '🎁';
+
+    // Mặc định
+    return CATEGORY_ICONS[categoryName] || '📦';
+};
+
+export const CategoryGrid: React.FC<CategoryGridProps> = ({
     onCategoryPress = (category) => console.log('Category pressed:', category.name),
-    selectedCategory = null 
+    selectedCategory = null
 }) => {
     const { width } = useWindowDimensions();
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [loading, setLoading] = useState(true);
+    // 🔥 Hàm chuyển categoryId thành tên hiển thị
+    const getDisplayNameFromCategoryId = (categoryId: string): string => {
+        const nameMap: Record<string, string> = {
+            'kids': 'Trẻ Em',
+            'bracelets': 'Vòng Tay',
+            'necklaces': 'Dây Chuyền',
+            'rings': 'Nhẫn',
+            'earrings': 'Bông Tai',
+            'gold': 'Vàng',
+            'silver': 'Bạc',
+            'diamonds': 'Kim Cương',
+            'pearls': 'Ngọc Trai',
+            'luxury': 'Cao Cấp',
+            'wedding': 'Cưới',
+            // Thêm các mapping khác
+        };
 
-    // 🟢 ALIGNMENT LOGIC (Đã sửa để khớp hoàn toàn với Banner)
-    // Banner rộng ~92% hoặc max 1200px.
-    // Để thẳng hàng, ta cần padding sao cho nội dung bắt đầu từ điểm đó.
-    
+        return nameMap[categoryId] ||
+            categoryId.charAt(0).toUpperCase() + categoryId.slice(1);
+    };
+
+    // 🔥 Sửa hàm getCategoryIcon
+    const getCategoryIcon = (categoryId: string): string => {
+        const iconMap: Record<string, string> = {
+            'kids': '👶',
+            'bracelets': '🪬',
+            'necklaces': '📿',
+            'rings': '💍',
+            'earrings': '👂',
+            'gold': '🟡',
+            'silver': '⚪',
+            'diamonds': '💎',
+            'pearls': '🫧',
+            'luxury': '👑',
+            'wedding': '💒',
+            // Thêm các icon khác
+        };
+
+        return iconMap[categoryId] || '📦';
+    };
+    // 🔥 Lấy categories từ Firebase
+    useEffect(() => {
+        const loadCategories = async () => {
+            try {
+                const products = await getAllProducts();
+                console.log("🔥 Products từ Firebase:", products.length, "sản phẩm");
+
+                // 🔥 SỬA: DÙNG categoryId THAY VÌ type
+                const categoryMap = new Map<string, number>();
+
+                products.forEach(product => {
+                    // 🔥 QUAN TRỌNG: Dùng categoryId thay vì type
+                    const categoryId = product.categoryId || product.type;
+                    if (categoryId) {
+                        const count = categoryMap.get(categoryId) || 0;
+                        categoryMap.set(categoryId, count + 1);
+                    }
+                });
+
+                console.log("🔥 Categories found:", Array.from(categoryMap.entries()));
+
+                // 🔥 Tạm thời dùng categoryId làm type
+                const categoryArray: Category[] = Array.from(categoryMap.entries()).map(([categoryId, count]) => {
+                    // Tạo tên hiển thị từ categoryId
+                    const displayName = getDisplayNameFromCategoryId(categoryId);
+                    return {
+                        id: categoryId,
+                        name: displayName,
+                        icon: getCategoryIcon(categoryId), // Sửa hàm này
+                        count: count,
+                        type: categoryId // 🔥 Dùng categoryId làm type
+                    };
+                });
+
+                categoryArray.sort((a, b) => b.count - a.count);
+                setCategories(categoryArray);
+
+            } catch (error) {
+                console.error("❌ Lỗi load categories:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        loadCategories();
+    }, []);
+
     const maxGridWidth = 1200;
-    
-    // Nếu màn hình lớn hơn 1200px (Web PC)
-    // Padding = (Màn hình - 1200) / 2
-    // Nếu màn hình nhỏ (Mobile/Tablet)
-    // Padding mặc định = 15px (giống margin của Banner mobile)
-    
-    const containerPadding = width > maxGridWidth 
-        ? (width - maxGridWidth) / 2 
-        : 15; 
+    const containerPadding = width > maxGridWidth
+        ? (width - maxGridWidth) / 2
+        : 15;
+
+    if (loading) {
+        return (
+            <View style={styles.container}>
+                <View style={[styles.sectionHeader, { paddingHorizontal: containerPadding }]}>
+                    <Text style={styles.sectionTitle}>Danh Mục</Text>
+                </View>
+                <View style={{ paddingHorizontal: containerPadding }}>
+                    <Text>Đang tải danh mục...</Text>
+                </View>
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
             <View style={[styles.sectionHeader, { paddingHorizontal: containerPadding }]}>
                 <Text style={styles.sectionTitle}>Danh Mục</Text>
-                <TouchableOpacity onPress={() => onCategoryPress({ 
-                    id: 'all', 
-                    name: 'Tất cả', 
-                    icon: '📦', 
-                    count: 0, 
-                    type: 'all' 
-                } as Category)}>
+                <TouchableOpacity onPress={() => onCategoryPress({
+                    id: 'all',
+                    name: 'Tất cả',
+                    icon: '📦',
+                    count: categories.reduce((sum, cat) => sum + cat.count, 0),
+                    type: 'all'
+                })}>
                     <Text style={styles.seeAllText}>Xem tất cả</Text>
                 </TouchableOpacity>
             </View>
 
-            <ScrollView 
+            <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={[
-                    styles.categoriesContainer, 
+                    styles.categoriesContainer,
                     { paddingHorizontal: containerPadding }
                 ]}
             >
-                {MOCK_CATEGORIES.map((category) => (
-                    <CategoryCard 
-                        key={category.id} 
-                        category={category} 
+                {/* 🔥 Hiển thị "Tất cả" đầu tiên */}
+                <CategoryCard
+                    key="all"
+                    category={{
+                        id: 'all',
+                        name: 'Tất cả',
+                        icon: '📦',
+                        count: categories.reduce((sum, cat) => sum + cat.count, 0),
+                        type: 'all'
+                    }}
+                    onPress={onCategoryPress}
+                    isSelected={selectedCategory === 'all'}
+                />
+
+                {/* 🔥 Hiển thị categories từ Firebase */}
+                {categories.map((category) => (
+                    <CategoryCard
+                        key={category.id}
+                        category={category}
                         onPress={onCategoryPress}
                         isSelected={selectedCategory === category.type}
                     />
@@ -148,7 +293,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginRight: 20,
     },
-    categoryCardSelected: { 
+    categoryCardSelected: {
         transform: [{ scale: 1.05 }],
     },
     iconContainer: {
@@ -167,7 +312,7 @@ const styles = StyleSheet.create({
         shadowRadius: 3,
         elevation: 2,
     },
-    iconContainerSelected: { 
+    iconContainerSelected: {
         backgroundColor: COLORS.primaryLight,
         borderColor: COLORS.primary,
         borderWidth: 2,
@@ -182,7 +327,7 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginBottom: 4,
     },
-    categoryNameSelected: { 
+    categoryNameSelected: {
         color: COLORS.primary,
         fontWeight: 'bold',
     },

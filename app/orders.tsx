@@ -1,41 +1,51 @@
-
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, TextInput, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    FlatList,
+    TouchableOpacity,
+    Image,
+    ScrollView,
+    ActivityIndicator,
+    RefreshControl,
+    Alert
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Search, Truck, Package, Clock, CheckCircle, XCircle } from 'lucide-react-native';
+import { ArrowLeft, Search, Truck, Package, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react-native';
 import { COLORS } from '../theme/colors';
+import { useAuth } from '../lib/AuthContext';
 
-// Mock Data
-const MOCK_ORDERS = [
-    {
-        id: 'ORD-2024-001',
-        date: '20/12/2024',
-        status: 'shipping',
-        total: 18530000,
-        items: [
-            { name: 'Nhẫn Kim Cương Vàng 18K', quantity: 1, image: require('../assets/products/ring1.png') }
-        ]
-    },
-    {
-        id: 'ORD-2024-002',
-        date: '15/12/2024',
-        status: 'completed',
-        total: 4500000,
-        items: [
-            { name: 'Dây Chuyền Ngọc Trai Nhật', quantity: 1, image: require('../assets/products/pearl-necklace.png') }
-        ]
-    },
-    {
-        id: 'ORD-2024-003',
-        date: '10/11/2024',
-        status: 'cancelled',
-        total: 750000,
-        items: [
-            { name: 'Nhẫn Bạc 925 Basic', quantity: 2, image: require('../assets/products/silver-ring.png') }
-        ]
-    }
-];
+// 🔥 Service lấy đơn hàng từ Firebase
+import { getOrdersByUserId } from '../app/services/orderService';
+
+// 🔥 Type cho Order
+interface OrderItem {
+    productId: string;
+    name: string;
+    quantity: number;
+    price: number;
+    image?: string;
+}
+
+interface Order {
+    id: string;
+    userId: string;
+    orderNumber: string;
+    items: OrderItem[];
+    totalAmount: number;
+    status: 'pending' | 'shipping' | 'completed' | 'cancelled';
+    shippingAddress: {
+        name: string;
+        phone: string;
+        address: string;
+    };
+    createdAt: any; // Firestore Timestamp
+    updatedAt: any;
+    paymentMethod: string;
+    paymentStatus: string;
+}
 
 const STATUS_CONFIG: any = {
     pending: { label: 'Chờ xác nhận', color: '#F59E0B', icon: Clock, bg: '#FFF8E1' },
@@ -47,29 +57,90 @@ const STATUS_CONFIG: any = {
 export default function OrderHistoryScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const [activeTab, setActiveTab] = useState('all');
+    const { user } = useAuth();
 
-    const filteredOrders = activeTab === 'all' 
-        ? MOCK_ORDERS 
-        : MOCK_ORDERS.filter(o => o.status === activeTab);
+    const [activeTab, setActiveTab] = useState<string>('all');
+    const [orders, setOrders] = useState<Order[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
-    const getImageSource = (source: any) => {
-        if (!source) return { uri: 'https://via.placeholder.com/100' };
-        if (typeof source === 'number') return source;
-        return { uri: source };
+    // 🔥 Lấy đơn hàng từ Firebase
+    useEffect(() => {
+        if (user?.uid) {
+            console.log("🔥 DEBUG - User ID:", user.uid);
+            console.log("🔥 DEBUG - User email:", user.email);
+            fetchOrders();
+        } else {
+            console.log("🔥 DEBUG - Chưa có user");
+            setLoading(false);
+        }
+    }, [user?.uid]);
+
+    const fetchOrders = async () => {
+        if (!user?.uid) return;
+
+        try {
+            setLoading(true);
+            console.log("🔥 DEBUG - Đang fetch orders cho user:", user.uid);
+            const userOrders = await getOrdersByUserId(user.uid);
+            console.log("🔥 DEBUG - Số đơn hàng tìm thấy:", userOrders.length);
+            console.log("🔥 DEBUG - Orders data:", userOrders);
+            setOrders(userOrders as Order[]);
+        } catch (error) {
+            console.error("❌ Lỗi lấy đơn hàng:", error);
+            Alert.alert('Lỗi', 'Không thể tải danh sách đơn hàng');
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
     };
 
-    const renderOrderItem = ({ item }: { item: any }) => {
+    const onRefresh = () => {
+        setRefreshing(true);
+        fetchOrders();
+    };
+
+    const filteredOrders = activeTab === 'all'
+        ? orders
+        : orders.filter(o => o.status === activeTab);
+
+    const getImageSource = (source: any) => {
+        if (!source || source === '') {
+            return { uri: 'https://via.placeholder.com/100?text=Jewelry' };
+        }
+        if (typeof source === 'string') return { uri: source };
+        return source;
+    };
+
+    const formatDate = (timestamp: any) => {
+        if (!timestamp) return 'Không rõ';
+
+        try {
+            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            return date.toLocaleDateString('vi-VN');
+        } catch (error) {
+            return 'Không rõ';
+        }
+    };
+
+    const renderOrderItem = ({ item }: { item: Order }) => {
         const statusInfo = STATUS_CONFIG[item.status] || STATUS_CONFIG.pending;
         const StatusIcon = statusInfo.icon;
 
         return (
-            <View style={styles.orderCard}>
+            <TouchableOpacity
+                style={styles.orderCard}
+                onPress={() => router.push({
+                    pathname: '/orderdetail/[orderId]',
+                    params: { orderId: item.id }
+                })}
+                activeOpacity={0.9}
+            >
                 {/* Order Header */}
                 <View style={styles.orderHeader}>
                     <View style={styles.orderIdBox}>
                         <Package size={16} color={COLORS.text} />
-                        <Text style={styles.orderId}>{item.id}</Text>
+                        <Text style={styles.orderId}>{item.orderNumber || item.id.substring(0, 8)}</Text>
                     </View>
                     <View style={[styles.statusBadge, { backgroundColor: statusInfo.bg }]}>
                         <StatusIcon size={14} color={statusInfo.color} />
@@ -82,30 +153,47 @@ export default function OrderHistoryScreen() {
                 <View style={styles.divider} />
 
                 {/* Items Preview */}
-                {item.items.map((prod: any, index: number) => (
+                {item.items.slice(0, 2).map((prod, index) => (
                     <View key={index} style={styles.productRow}>
                         <Image source={getImageSource(prod.image)} style={styles.productImage} />
                         <View style={styles.productInfo}>
                             <Text numberOfLines={1} style={styles.productName}>{prod.name}</Text>
                             <Text style={styles.productQty}>x{prod.quantity}</Text>
                         </View>
+                        <Text style={styles.productPrice}>
+                            {(prod.price * prod.quantity).toLocaleString('vi-VN')}₫
+                        </Text>
                     </View>
                 ))}
+
+                {item.items.length > 2 && (
+                    <Text style={styles.moreItemsText}>
+                        +{item.items.length - 2} sản phẩm khác
+                    </Text>
+                )}
 
                 <View style={styles.divider} />
 
                 {/* Footer */}
                 <View style={styles.orderFooter}>
-                    <Text style={styles.dateText}>{item.date}</Text>
+                    <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
                     <View style={styles.totalBox}>
                         <Text style={styles.totalLabel}>Thành tiền:</Text>
-                        <Text style={styles.totalPrice}>{item.total.toLocaleString('vi-VN')}₫</Text>
+                        <Text style={styles.totalPrice}>
+                            {item.totalAmount.toLocaleString('vi-VN')}₫
+                        </Text>
                     </View>
                 </View>
-                
+
                 {/* Actions */}
                 <View style={styles.actionRow}>
-                    <TouchableOpacity style={styles.outlineBtn}>
+                    <TouchableOpacity
+                        style={styles.outlineBtn}
+                        onPress={() => router.push({
+                            pathname: '/orderdetail/[orderId]',
+                            params: { orderId: item.id }
+                        })}
+                    >
                         <Text style={styles.outlineBtnText}>Chi tiết</Text>
                     </TouchableOpacity>
                     {item.status === 'completed' && (
@@ -114,9 +202,33 @@ export default function OrderHistoryScreen() {
                         </TouchableOpacity>
                     )}
                 </View>
-            </View>
+            </TouchableOpacity>
         );
     };
+
+    if (!user) {
+        return (
+            <View style={styles.authContainer}>
+                <AlertCircle size={60} color="#DDD" />
+                <Text style={styles.authText}>Vui lòng đăng nhập để xem đơn hàng</Text>
+                <TouchableOpacity
+                    style={styles.authButton}
+                    onPress={() => router.push('/login')}
+                >
+                    <Text style={styles.authButtonText}>Đăng nhập</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
+
+    if (loading && !refreshing) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={styles.loadingText}>Đang tải đơn hàng...</Text>
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
@@ -126,24 +238,24 @@ export default function OrderHistoryScreen() {
                     <ArrowLeft size={24} color={COLORS.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Đơn hàng của tôi</Text>
-                <TouchableOpacity>
+                <TouchableOpacity onPress={onRefresh}>
                     <Search size={24} color={COLORS.text} />
                 </TouchableOpacity>
             </View>
 
             {/* Tabs */}
             <View style={styles.tabContainer}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal: 15}}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }}>
                     {['all', 'shipping', 'completed', 'cancelled'].map((tab) => (
-                        <TouchableOpacity 
-                            key={tab} 
+                        <TouchableOpacity
+                            key={tab}
                             style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}
                             onPress={() => setActiveTab(tab)}
                         >
                             <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-                                {tab === 'all' ? 'Tất cả' : 
-                                 tab === 'shipping' ? 'Đang giao' : 
-                                 tab === 'completed' ? 'Hoàn thành' : 'Đã hủy'}
+                                {tab === 'all' ? 'Tất cả' :
+                                    tab === 'shipping' ? 'Đang giao' :
+                                        tab === 'completed' ? 'Hoàn thành' : 'Đã hủy'}
                             </Text>
                         </TouchableOpacity>
                     ))}
@@ -157,10 +269,24 @@ export default function OrderHistoryScreen() {
                 keyExtractor={item => item.id}
                 contentContainerStyle={styles.listContent}
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={[COLORS.primary]}
+                    />
+                }
                 ListEmptyComponent={
                     <View style={styles.emptyContainer}>
                         <Package size={60} color="#DDD" />
-                        <Text style={styles.emptyText}>Chưa có đơn hàng nào</Text>
+                        <Text style={styles.emptyTitle}>Chưa có đơn hàng nào</Text>
+                        <Text style={styles.emptyText}>Đơn hàng của bạn sẽ hiển thị ở đây</Text>
+                        <TouchableOpacity
+                            style={styles.shopButton}
+                            onPress={() => router.push('/home')}
+                        >
+                            <Text style={styles.shopButtonText}>Mua sắm ngay</Text>
+                        </TouchableOpacity>
                     </View>
                 }
             />
@@ -173,6 +299,39 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#F5F7FA',
     },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        marginTop: 10,
+        color: COLORS.subText,
+    },
+    authContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 30,
+    },
+    authText: {
+        fontSize: 16,
+        color: COLORS.text,
+        marginTop: 15,
+        marginBottom: 20,
+        textAlign: 'center',
+    },
+    authButton: {
+        backgroundColor: COLORS.primary,
+        paddingHorizontal: 30,
+        paddingVertical: 12,
+        borderRadius: 8,
+    },
+    authButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 16,
+    },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -183,7 +342,7 @@ const styles = StyleSheet.create({
     },
     backButton: { padding: 4 },
     headerTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.text },
-    
+
     // Tabs
     tabContainer: {
         backgroundColor: 'white',
@@ -214,6 +373,7 @@ const styles = StyleSheet.create({
     // List
     listContent: {
         padding: 15,
+        flexGrow: 1,
     },
     orderCard: {
         backgroundColor: 'white',
@@ -273,6 +433,7 @@ const styles = StyleSheet.create({
     productInfo: {
         flex: 1,
         marginLeft: 10,
+        marginRight: 10,
     },
     productName: {
         fontSize: 14,
@@ -282,6 +443,18 @@ const styles = StyleSheet.create({
     productQty: {
         fontSize: 13,
         color: COLORS.subText,
+        marginTop: 2,
+    },
+    productPrice: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.text,
+    },
+    moreItemsText: {
+        fontSize: 12,
+        color: COLORS.subText,
+        textAlign: 'center',
+        marginTop: 5,
     },
     orderFooter: {
         flexDirection: 'row',
@@ -337,11 +510,30 @@ const styles = StyleSheet.create({
     emptyContainer: {
         alignItems: 'center',
         marginTop: 50,
+        padding: 20,
+    },
+    emptyTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: COLORS.text,
+        marginTop: 15,
     },
     emptyText: {
-        marginTop: 10,
+        marginTop: 5,
         color: COLORS.subText,
+        fontSize: 14,
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    shopButton: {
+        backgroundColor: COLORS.primary,
+        paddingHorizontal: 30,
+        paddingVertical: 12,
+        borderRadius: 8,
+    },
+    shopButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
         fontSize: 16,
-    }
+    },
 });
-    

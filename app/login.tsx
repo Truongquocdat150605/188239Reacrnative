@@ -36,50 +36,70 @@ export default function LoginScreen() {
 
         try {
             setIsLoading(true);
+            console.log('🔍 [LOGIN] Attempting login with email:', email);
 
             // 🔐 Đăng nhập Firebase Auth
             const userCredential = await signInWithEmailAndPassword(
                 auth,
-                email,
+                email.trim().toLowerCase(),
                 password
             );
 
             const user = userCredential.user;
+            console.log('✅ [LOGIN] Firebase Auth success:', {
+                uid: user.uid,
+                email: user.email,
+            });
 
             // 📄 Lấy thông tin user từ Firestore
             const userRef = doc(db, "users", user.uid);
             const userSnap = await getDoc(userRef);
 
-            if (!userSnap.exists()) {
-                Alert.alert("Lỗi", "Không tìm thấy thông tin người dùng trong database");
-                return;
+            let role: 'user' | 'admin' = 'user';
+            let name = user.email?.split('@')[0] || 'User';
+
+            if (userSnap.exists()) {
+                const userData = userSnap.data();
+                console.log('🔍 [LOGIN] Firestore user data:', userData);
+
+                role = userData.role || 'user';
+                name = userData.name || name;
             }
 
-            const userData = userSnap.data();
-
-            // 🌍 Cập nhật Global Auth Context
-            login({
-                name: userData.name,
-                email: userData.email,
-                phone: userData.phone,
-                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                    userData.name
-                )}&background=0A84FF&color=fff`,
+            // 🌍 Cập nhật AuthContext
+            await login({
+                uid: user.uid,
+                email: user.email || '',
+                name,
             });
 
-            Alert.alert('🎉 Thành công', `Chào mừng ${userData.name}!`);
-            router.replace('/home');
+            Alert.alert('🎉 Thành công', `Chào mừng ${name}!`);
+
+            // 🔥 PHÂN QUYỀN Ở ĐÂY (QUAN TRỌNG)
+            if (role === 'admin') {
+                router.replace('/admin/order');
+            } else {
+                router.replace('/home');
+            }
 
         } catch (error: any) {
-            Alert.alert(
-                '❌ Đăng nhập thất bại',
-                error.message || 'Email hoặc mật khẩu không đúng'
-            );
+            console.error('❌ [LOGIN ERROR]', error);
+
+            let errorMessage = 'Email hoặc mật khẩu không đúng';
+
+            if (error.code === 'auth/user-not-found') {
+                errorMessage = 'Tài khoản không tồn tại';
+            } else if (error.code === 'auth/wrong-password') {
+                errorMessage = 'Mật khẩu không đúng';
+            } else if (error.code === 'auth/too-many-requests') {
+                errorMessage = 'Tài khoản tạm thời bị khóa, thử lại sau';
+            }
+
+            Alert.alert('❌ Đăng nhập thất bại', errorMessage);
         } finally {
             setIsLoading(false);
         }
     };
-
 
 
     const handleRegister = () => {

@@ -3,13 +3,13 @@ import React from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert, Switch, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { 
-    ChevronRight, 
-    Package, 
-    Heart, 
-    MapPin, 
-    Settings, 
-    LogOut, 
+import {
+    ChevronRight,
+    Package,
+    Heart,
+    MapPin,
+    Settings,
+    LogOut,
     Bell,
     Lock,
     Headphones,
@@ -18,17 +18,43 @@ import {
 import { COLORS } from '../theme/colors';
 import { useWishlist } from '../lib/WishlistContext';
 import { useAuth } from '../lib/AuthContext'; // 🆕 Import Auth Context
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db } from "../app/firebaseConfig";
+import { useEffect, useState } from "react";
 
 export default function ProfileScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { wishlistCount } = useWishlist();
     const { user, logout } = useAuth(); // 🆕 Lấy thông tin user và hàm logout
+    const [orderCount, setOrderCount] = useState(0);
+    useEffect(() => {
+        if (!user?.uid) {
+            setOrderCount(0);
+            return;
+        }
+
+        const fetchOrderCount = async () => {
+            try {
+                const q = query(
+                    collection(db, "orders"),
+                    where("userId", "==", user.uid)
+                );
+                const snapshot = await getDocs(q);
+                setOrderCount(snapshot.size); // 🔥 ĐÚNG
+            } catch (error) {
+                console.error("❌ Lỗi lấy số đơn hàng:", error);
+                setOrderCount(0);
+            }
+        };
+
+        fetchOrderCount();
+    }, [user?.uid]);
 
     const handleLogout = () => {
         const performLogout = () => {
             logout(); // 🆕 Gọi hàm logout từ context
-            
+
             // Xóa lịch sử điều hướng và về trang login
             if (router.canDismiss()) {
                 router.dismissAll();
@@ -48,8 +74,8 @@ export default function ProfileScreen() {
                 "Bạn có chắc muốn đăng xuất?",
                 [
                     { text: "Hủy", style: "cancel" },
-                    { 
-                        text: "Đăng xuất", 
+                    {
+                        text: "Đăng xuất",
                         style: "destructive",
                         onPress: performLogout
                     }
@@ -81,15 +107,15 @@ export default function ProfileScreen() {
             {/* Header Background */}
             <View style={[styles.headerBg, { height: 160 + insets.top }]} />
 
-            <ScrollView 
+            <ScrollView
                 contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20 }]}
                 showsVerticalScrollIndicator={false}
             >
                 {/* User Info Card */}
                 <View style={styles.userCard}>
-                    <Image 
-                        source={{ uri: displayAvatar }} 
-                        style={styles.avatar} 
+                    <Image
+                        source={{ uri: displayAvatar }}
+                        style={styles.avatar}
                     />
                     <View style={styles.userInfo}>
                         <Text style={styles.userName}>{displayName}</Text>
@@ -98,8 +124,8 @@ export default function ProfileScreen() {
                             <Text style={styles.badgeText}>Thành viên</Text>
                         </View>
                     </View>
-                    <TouchableOpacity 
-                        style={styles.editBtn} 
+                    <TouchableOpacity
+                        style={styles.editBtn}
                         onPress={() => router.push('/edit-profile')}
                     >
                         <Edit2 size={20} color="#666" />
@@ -112,10 +138,10 @@ export default function ProfileScreen() {
                         <View style={styles.statIconBg}>
                             <Package size={24} color={COLORS.primary} />
                         </View>
-                        <Text style={styles.statNumber}>12</Text>
+                        <Text style={styles.statNumber}>{orderCount}</Text>
                         <Text style={styles.statLabel}>Đơn hàng</Text>
                     </TouchableOpacity>
-                    
+
                     <TouchableOpacity style={styles.statItem} onPress={() => router.push('/wishlist')}>
                         <View style={[styles.statIconBg, { backgroundColor: '#FFF0F0' }]}>
                             <Heart size={24} color="#FF3B30" />
@@ -126,7 +152,7 @@ export default function ProfileScreen() {
 
                     <TouchableOpacity style={styles.statItem} onPress={() => Alert.alert("Voucher", "Bạn có 2 voucher khả dụng")}>
                         <View style={[styles.statIconBg, { backgroundColor: '#F0F9FF' }]}>
-                            <Text style={{fontSize: 18}}>🎟️</Text>
+                            <Text style={{ fontSize: 18 }}>🎟️</Text>
                         </View>
                         <Text style={styles.statNumber}>2</Text>
                         <Text style={styles.statLabel}>Voucher</Text>
@@ -136,35 +162,35 @@ export default function ProfileScreen() {
                 {/* Menu Section 1 */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Tài khoản của tôi</Text>
-                    <MenuItem 
-                        icon={Package} 
-                        title="Đơn mua" 
-                        subtitle="Xem lịch sử đơn hàng" 
-                        onPress={() => router.push('/orders')} 
+                    <MenuItem
+                        icon={Package}
+                        title="Đơn mua"
+                        subtitle="Xem lịch sử đơn hàng"
+                        onPress={() => router.push('/orders')}
                     />
-                    <MenuItem 
-                        icon={Heart} 
-                        title="Đã thích" 
+                    <MenuItem
+                        icon={Heart}
+                        title="Đã thích"
                         subtitle={`${wishlistCount} sản phẩm`}
-                        onPress={() => router.push('/wishlist')} 
+                        onPress={() => router.push('/wishlist')}
                     />
-                    <MenuItem 
-                        icon={MapPin} 
-                        title="Địa chỉ nhận hàng" 
+                    <MenuItem
+                        icon={MapPin}
+                        title="Địa chỉ nhận hàng"
                         subtitle="Quản lý địa chỉ giao hàng"
-                        onPress={() => router.push('/addresses')} 
+                        onPress={() => router.push('/addresses')}
                     />
                 </View>
 
                 {/* Menu Section 2 */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Cài đặt & Bảo mật</Text>
-                    <MenuItem 
-                        icon={Lock} 
-                        title="Đổi mật khẩu" 
-                        onPress={() => router.push('/change-password')} 
+                    <MenuItem
+                        icon={Lock}
+                        title="Đổi mật khẩu"
+                        onPress={() => router.push('/change-password')}
                     />
-                     <View style={styles.menuItem}>
+                    <View style={styles.menuItem}>
                         <View style={styles.menuIconBox}>
                             <Bell size={20} color={COLORS.primary} />
                         </View>
@@ -173,29 +199,29 @@ export default function ProfileScreen() {
                         </View>
                         <Switch value={true} trackColor={{ true: COLORS.primary }} />
                     </View>
-                    <MenuItem 
-                        icon={Headphones} 
-                        title="Trung tâm hỗ trợ" 
-                        onPress={() => Alert.alert("Thông báo", "Liên hệ tổng đài 1900 xxxx")} 
+                    <MenuItem
+                        icon={Headphones}
+                        title="Trung tâm hỗ trợ"
+                        onPress={() => Alert.alert("Thông báo", "Liên hệ tổng đài 1900 xxxx")}
                     />
-                    <MenuItem 
-                        icon={LogOut} 
-                        title="Đăng xuất" 
-                        isDestructive 
-                        onPress={handleLogout} 
+                    <MenuItem
+                        icon={LogOut}
+                        title="Đăng xuất"
+                        isDestructive
+                        onPress={handleLogout}
                     />
                 </View>
-                
+
                 <Text style={styles.version}>Phiên bản 1.1.0</Text>
-                <View style={{height: 50}} />
+                <View style={{ height: 50 }} />
             </ScrollView>
-            
+
             {/* Back Button Overlay */}
-            <TouchableOpacity 
-                style={[styles.backButton, { top: insets.top + 10 }]} 
+            <TouchableOpacity
+                style={[styles.backButton, { top: insets.top + 10 }]}
                 onPress={() => router.back()}
             >
-                <ChevronRight size={24} color="#FFF" style={{transform: [{rotate: '180deg'}]}} />
+                <ChevronRight size={24} color="#FFF" style={{ transform: [{ rotate: '180deg' }] }} />
             </TouchableOpacity>
         </View>
     );

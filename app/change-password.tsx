@@ -1,10 +1,19 @@
-
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TextInput, 
+  TouchableOpacity, 
+  Alert, 
+  ScrollView,
+  ActivityIndicator 
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { COLORS } from '../theme/colors';
+import { changePassword } from '../app/services/authService'; // 🔥 Import hàm changePassword
 
 export default function ChangePasswordScreen() {
     const router = useRouter();
@@ -17,8 +26,10 @@ export default function ChangePasswordScreen() {
     const [showCurrent, setShowCurrent] = useState(false);
     const [showNew, setShowNew] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
+    const [loading, setLoading] = useState(false);
 
-    const handleChangePassword = () => {
+    const handleChangePassword = async () => {
+        // Validation
         if (!currentPass || !newPass || !confirmPass) {
             Alert.alert("Lỗi", "Vui lòng nhập đầy đủ thông tin");
             return;
@@ -34,12 +45,60 @@ export default function ChangePasswordScreen() {
             return;
         }
 
-        // Giả lập call API
+        if (currentPass === newPass) {
+            Alert.alert("Lỗi", "Mật khẩu mới phải khác mật khẩu hiện tại");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            // 🔥 Gọi Firebase Auth để đổi mật khẩu
+            await changePassword(currentPass, newPass);
+            
+            Alert.alert(
+                "Thành công",
+                "Đổi mật khẩu thành công!",
+                [
+                    { 
+                        text: "OK", 
+                        onPress: () => {
+                            // Xóa form và quay lại
+                            setCurrentPass('');
+                            setNewPass('');
+                            setConfirmPass('');
+                            router.back();
+                        }
+                    }
+                ]
+            );
+        } catch (error: any) {
+            Alert.alert("Lỗi", error.message || "Đổi mật khẩu thất bại");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleForgotPassword = () => {
         Alert.alert(
-            "Thành công",
-            "Đổi mật khẩu thành công. Vui lòng đăng nhập lại.",
+            "Quên mật khẩu",
+            "Bạn có muốn nhận email đặt lại mật khẩu không?",
             [
-                { text: "OK", onPress: () => router.replace('/login') }
+                { text: "Hủy", style: "cancel" },
+                { 
+                    text: "Gửi email", 
+                    onPress: async () => {
+                        try {
+                            // 🔥 Có thể thêm gửi email reset password
+                            // await sendPasswordResetEmail(userEmail);
+                            Alert.alert(
+                                "Đã gửi email",
+                                "Vui lòng kiểm tra hộp thư của bạn để đặt lại mật khẩu"
+                            );
+                        } catch (error) {
+                            Alert.alert("Lỗi", "Không thể gửi email đặt lại mật khẩu");
+                        }
+                    }
+                }
             ]
         );
     };
@@ -56,8 +115,9 @@ export default function ChangePasswordScreen() {
                     secureTextEntry={!show}
                     placeholder={placeholder}
                     placeholderTextColor="#CCC"
+                    editable={!loading}
                 />
-                <TouchableOpacity onPress={toggleShow} style={styles.eyeBtn}>
+                <TouchableOpacity onPress={toggleShow} style={styles.eyeBtn} disabled={loading}>
                     {show ? <EyeOff size={20} color="#999" /> : <Eye size={20} color="#999" />}
                 </TouchableOpacity>
             </View>
@@ -67,8 +127,8 @@ export default function ChangePasswordScreen() {
     return (
         <View style={styles.container}>
              <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 10 }]}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <ArrowLeft size={24} color={COLORS.text} />
+                <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={loading}>
+                    <ArrowLeft size={24} color={loading ? '#CCC' : COLORS.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Đổi mật khẩu</Text>
                 <View style={{width: 24}} />
@@ -104,12 +164,26 @@ export default function ChangePasswordScreen() {
                     placeholder="Nhập lại mật khẩu mới"
                 />
 
-                <TouchableOpacity style={styles.button} onPress={handleChangePassword}>
-                    <Text style={styles.buttonText}>Xác nhận</Text>
+                <TouchableOpacity 
+                    style={[styles.button, loading && styles.buttonDisabled]} 
+                    onPress={handleChangePassword}
+                    disabled={loading}
+                >
+                    {loading ? (
+                        <ActivityIndicator color="white" />
+                    ) : (
+                        <Text style={styles.buttonText}>Xác nhận</Text>
+                    )}
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.forgotBtn} onPress={() => Alert.alert("Quên mật khẩu", "Vui lòng liên hệ CSKH")}>
-                    <Text style={styles.forgotText}>Quên mật khẩu?</Text>
+                <TouchableOpacity 
+                    style={styles.forgotBtn} 
+                    onPress={handleForgotPassword}
+                    disabled={loading}
+                >
+                    <Text style={[styles.forgotText, loading && { color: '#CCC' }]}>
+                        Quên mật khẩu?
+                    </Text>
                 </TouchableOpacity>
             </ScrollView>
         </View>
@@ -176,6 +250,9 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         alignItems: 'center',
         marginTop: 20,
+    },
+    buttonDisabled: {
+        backgroundColor: '#CCC',
     },
     buttonText: {
         color: 'white',

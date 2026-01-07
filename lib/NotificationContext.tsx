@@ -1,97 +1,179 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, {
+    createContext,
+    useContext,
+    useEffect,
+    useState,
+    ReactNode
+} from "react";
+import {
+    collection,
+    query,
+    where,
+    orderBy,
+    getDocs,
+    addDoc,
+    updateDoc,
+    doc,
+    serverTimestamp
+} from "firebase/firestore";
+import { db } from "../app/firebaseConfig";
+import { useAuth } from "./AuthContext";
 
-export type NotificationType = 'order' | 'promo' | 'system';
+/* ================== TYPE ================== */
+
+export type NotificationType = "order" | "promo" | "system";
 
 export type NotificationItem = {
     id: string;
+    userId: string;
     title: string;
     message: string;
     type: NotificationType;
-    date: string; // ISO string or formatted date
     isRead: boolean;
-    image?: any; // Optional image for promo
+    createdAt: any;
 };
 
 type NotificationContextType = {
     notifications: NotificationItem[];
     unreadCount: number;
-    addNotification: (item: Omit<NotificationItem, 'id' | 'date' | 'isRead'>) => void;
-    markAsRead: (id: string) => void;
-    markAllAsRead: () => void;
+    loading: boolean;
+    addNotification: (item: {
+        title: string;
+        message: string;
+        type: NotificationType;
+    }) => Promise<void>;
+    markAsRead: (id: string) => Promise<void>;
+    markAllAsRead: () => Promise<void>;
 };
 
-const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+/* ================== CONTEXT ================== */
+
+const NotificationContext = createContext<NotificationContextType | undefined>(
+    undefined
+);
 
 export const useNotification = () => {
     const context = useContext(NotificationContext);
     if (!context) {
-        throw new Error('useNotification must be used within NotificationProvider');
+        throw new Error(
+            "useNotification must be used within NotificationProvider"
+        );
     }
     return context;
 };
 
-// Dữ liệu mẫu ban đầu
-const MOCK_NOTIFICATIONS: NotificationItem[] = [
-    {
-        id: '1',
-        title: '🎉 Chào mừng bạn mới!',
-        message: 'Tặng bạn mã GIAMGIA50K cho đơn hàng đầu tiên. Mua sắm ngay!',
-        type: 'promo',
-        date: new Date(Date.now() - 86400000).toISOString(), // 1 ngày trước
-        isRead: false,
-    },
-    {
-        id: '2',
-        title: '📦 Đơn hàng đã giao thành công',
-        message: 'Đơn hàng #ORD-2024-002 đã được giao đến bạn. Hãy đánh giá sản phẩm nhé!',
-        type: 'order',
-        date: new Date(Date.now() - 172800000).toISOString(), // 2 ngày trước
-        isRead: true,
-    },
-    {
-        id: '3',
-        title: '💎 Bộ sưu tập Kim Cương mới',
-        message: 'Khám phá ngay những mẫu nhẫn kim cương sang trọng vừa cập bến.',
-        type: 'system',
-        date: new Date(Date.now() - 259200000).toISOString(), // 3 ngày trước
-        isRead: true,
-    }
-];
+/* ================== PROVIDER ================== */
 
-export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
+export const NotificationProvider = ({
+    children,
+}: {
+    children: ReactNode;
+}) => {
+    const { user } = useAuth();
 
-    const unreadCount = notifications.filter(n => !n.isRead).length;
+    const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const addNotification = (item: Omit<NotificationItem, 'id' | 'date' | 'isRead'>) => {
-        const newItem: NotificationItem = {
-            id: Date.now().toString(),
-            date: new Date().toISOString(),
-            isRead: false,
-            ...item,
+    /* ===== LOAD NOTIFICATION THEO USER ===== */
+    useEffect(() => {
+        if (!user?.uid) {
+            setNotifications([]);
+            setLoading(false);
+            return;
+        }
+
+        const fetchNotifications = async () => {
+            try {
+                setLoading(true);
+                const q = query(
+                    collection(db, "notifications"),
+                    where("userId", "==", user.uid),
+                    orderBy("createdAt", "desc")
+                );
+
+                const snap = await getDocs(q);
+                const data = snap.docs.map((d) => ({
+                    id: d.id,
+                    ...d.data(),
+                })) as NotificationItem[];
+
+                setNotifications(data);
+            } catch (error) {
+                console.error("❌ Lỗi load notifications:", error);
+            } finally {
+                setLoading(false);
+            }
         };
-        // Thêm vào đầu danh sách
-        setNotifications(prev => [newItem, ...prev]);
+
+        fetchNotifications();
+    }, [user?.uid]);
+
+    /* ===== UNREAD COUNT ===== */
+    const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+    /* ===== ADD NOTIFICATION (FIRESTORE) ===== */
+    const addNotification = async ({
+        title,
+        message,
+        type,
+    }: {
+        title: string;
+        message: string;
+        type: NotificationType;
+    }) => {
+        if (!user?.uid) return;
+
+        await addDoc(collection(db, "notifications"), {
+            userId: user.uid,
+            title,
+            message,
+            type,
+            isRead: false,
+            createdAt: serverTimestamp(),
+        });
     };
 
-    const markAsRead = (id: string) => {
-        setNotifications(prev => 
-            prev.map(n => n.id === id ? { ...n, isRead: true } : n)
+    /* ===== MARK ONE AS READ ===== */
+    const markAsRead = async (id: string) => {
+        await updateDoc(doc(db, "notifications", id), {
+            isRead: true,
+        });
+
+        setNotifications((prev) =>
+            prev.map((n) =>
+                n.id === id ? { ...n, isRead: true } : n
+            )
         );
     };
 
-    const markAllAsRead = () => {
-        setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    /* ===== MARK ALL AS READ ===== */
+    const markAllAsRead = async () => {
+        const unread = notifications.filter((n) => !n.isRead);
+
+        await Promise.all(
+            unread.map((n) =>
+                updateDoc(doc(db, "notifications", n.id), {
+                    isRead: true,
+                })
+            )
+        );
+
+        setNotifications((prev) =>
+            prev.map((n) => ({ ...n, isRead: true }))
+        );
     };
 
     return (
-        <NotificationContext.Provider value={{ 
-            notifications, 
-            unreadCount, 
-            addNotification, 
-            markAsRead, 
-            markAllAsRead 
-        }}>
+        <NotificationContext.Provider
+            value={{
+                notifications,
+                unreadCount,
+                loading,
+                addNotification,
+                markAsRead,
+                markAllAsRead,
+            }}
+        >
             {children}
         </NotificationContext.Provider>
     );
