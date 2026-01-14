@@ -43,14 +43,18 @@ export default function CartScreen() {
     /** 💰 Tính tổng */
     const selectedTotal = useMemo(() =>
         cartItems.reduce((sum, item) => {
-            const key = item.id; // id đã bao gồm size
-            const price = item.price ?? 0; // tránh undefined
-            const qty = item.quantity ?? 1;
+            const key = item.id;
 
-            return selectedItems.includes(key) ? sum + price * qty : sum;
+            const price = Number(item.price) || 0;
+            const qty = Number(item.quantity) || 1;
+
+            return selectedItems.includes(key)
+                ? sum + price * qty
+                : sum;
         }, 0),
         [cartItems, selectedItems]
     );
+
 
 
     const formatPrice = (price: number) =>

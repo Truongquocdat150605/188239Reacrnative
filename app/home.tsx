@@ -23,7 +23,7 @@ import { useCart } from '../lib/CartContext';
 import { useNotification } from '../lib/NotificationContext';
 
 // ✅ SERVICE FIRESTORE (đường dẫn của bạn đã đúng)
-import { getAllProducts } from '../app/services/productService';
+import { getAllProducts, ProductData } from '../app/services/productService';
 
 export default function HomeScreen() {
     const router = useRouter();
@@ -52,23 +52,27 @@ export default function HomeScreen() {
     }, []);
 
     const handleCategoryPress = (category: any) => {
-        router.push({
-            pathname: "/category/[id]",
-            params: { id: category.type }
-        });
+        router.push({ pathname: "/category/[id]", params: { id: category.type } });
+
     };
 
     const handleProductPress = (product: any) => {
-        router.push({
-            pathname: "/productdetail",
-            params: { id: product.id }
-        });
+        router.push({ pathname: "/productdetail", params: { id: product.id } });
+
     };
 
-    const handleAddToCart = (product: any) => {
-        addToCart(product);
-        Alert.alert("Thành công", `Đã thêm "${product.name}" vào giỏ`);
+    const handleAddToCart = (p: ProductData) => {
+        addToCart({
+            productId: p.id,
+            name: p.name ?? "",
+            price: p.price ?? 0,
+            image: p.image ?? null,
+            size: null, // sản phẩm không có size -> null
+        });
+
+        Alert.alert("Thành công", `Đã thêm "${p.name}" vào giỏ`);
     };
+
 
     // ✅ SEARCH TRÊN DATA FIRESTORE
     const filteredProducts = products.filter(p => {
@@ -81,7 +85,7 @@ export default function HomeScreen() {
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <Header cartCount={cartCount} notificationCount={unreadCount} />
+            <Header title=" Luxe Jewelry" />
 
             <SearchBar
                 value={searchText}

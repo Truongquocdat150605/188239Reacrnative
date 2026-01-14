@@ -23,9 +23,13 @@ export default function WishlistScreen() {
 
     const handleAddToCart = (product: any) => {
         addToCart({
-            ...product,
-            quantity: 1
+            productId: product.id,   // QUAN TRỌNG
+            name: product.name,
+            price: product.price,
+            image: product.image ?? null,
+            size: null,
         });
+
         Alert.alert("Thành công", "Đã thêm vào giỏ hàng");
     };
 

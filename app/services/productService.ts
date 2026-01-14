@@ -1,52 +1,64 @@
+// app/services/productService.ts
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 
-/** LẤY TẤT CẢ SẢN PHẨM */
-export const getAllProducts = async () => {
+/** Kiểu dữ liệu chuẩn 1 sản phẩm */
+export interface ProductData {
+  id: string;
+  name: string;
+  price: number;
+  image: string;                // đã map từ imageUrl / image / imageUri
+  categoryId: string;           // ví dụ: "kids", "bracelet", ...
+  isNew?: boolean;
+  isSale?: boolean;
+  rating?: number;
+  reviewCount?: number;
+  sizes?: string[];
+  description?: string;
+  specifications?: Record<string, any>;
+}
+
+/** Hàm chuẩn hoá 1 doc Firestore về ProductData */
+const mapProductDoc = (id: string, data: any): ProductData => {
+  return {
+    id,
+    name: data.name ?? "",
+    price: Number(data.price ?? 0),
+    image: data.imageUrl || data.image || data.imageUri || "",
+    categoryId: data.categoryId ?? "",
+    isNew: Boolean(data.isNew),
+    isSale: Boolean(data.isSale),
+    rating: typeof data.rating === "number" ? data.rating : 0,
+    reviewCount: typeof data.reviewCount === "number" ? data.reviewCount : 0,
+    sizes: Array.isArray(data.sizes) ? data.sizes : [],
+    description: data.description ?? "",
+    specifications: data.specifications ?? {},
+  };
+};
+
+/** 🔁 LẤY TẤT CẢ SẢN PHẨM */
+export const getAllProducts = async (): Promise<ProductData[]> => {
   try {
     const snapshot = await getDocs(collection(db, "products"));
-    return snapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        name: data.name ?? "",
-        price: data.price ?? 0,
-        image: data.imageUrl || data.image || "", // 🔥 Đảm bảo có imageUrl
-        type: data.type ?? "", // ⭐ Gốc fix lỗi ở ProductDetail
-        categoryId: data.categoryId ?? "", // 🔥 THÊM DÒNG NÀY
-        sizes: data.sizes ?? [],
-        description: data.description ?? "",
-        specifications: data.specifications ?? {},
-        rating: data.rating, // 🔥 Thêm nếu có
-        reviewCount: data.reviewCount, // 🔥 Thêm nếu có
-      };
-    });
+    return snapshot.docs.map((d) => mapProductDoc(d.id, d.data()));
   } catch (error) {
     console.error("❌ Lỗi lấy products:", error);
     return [];
   }
 };
-// productService.ts - THÊM HÀM NÀY
-/** LẤY 1 SẢN PHẨM THEO ID */
-export const getProductById = async (productId: string) => {
+
+/** 🎯 LẤY 1 SẢN PHẨM THEO ID */
+export const getProductById = async (
+  productId: string
+): Promise<ProductData | null> => {
   try {
     const productRef = doc(db, "products", productId);
     const docSnap = await getDoc(productRef);
 
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      return {
-        id: docSnap.id,
-        name: data.name ?? "",
-        price: data.price ?? 0,
-        image: data.imageUrl || data.image || data.imageUri || "",
-        type: data.type ?? "",
-        sizes: data.sizes ?? [],
-        description: data.description ?? "",
-        specifications: data.specifications ?? {},
-      };
-    }
-    return null;
+    if (!docSnap.exists()) return null;
+
+    const data = docSnap.data();
+    return mapProductDoc(docSnap.id, data);
   } catch (error) {
     console.error("❌ Lỗi lấy product by ID:", error);
     return null;

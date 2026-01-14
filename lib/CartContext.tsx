@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from "react";
 import { db } from "../app/firebaseConfig";
 import {
   doc,
@@ -8,25 +14,25 @@ import {
   getDocs,
   collection,
   writeBatch,
+  onSnapshot,
 } from "firebase/firestore";
+import { useAuth } from "./AuthContext";
 
-// 🧍 TẠM DÙNG USER GIẢ (sau này thay bằng UID khi login)
-const userId = "test-user";
-
+/* ================== TYPE ================== */
 export type CartItem = {
-  id: string;
+  id: string;        // id dùng cho Firestore (có thể kèm size)
+  productId: string; // id gốc sản phẩm
   name: string;
   price: number;
   quantity: number;
   image?: string;
-  imageUrl?: string;
-  imageUri?: string;
-  size?: string;
+  size?: string | null; // ❗ size có thể null, không undefined
 };
 
+/* ================== CONTEXT TYPE ================== */
 type CartContextType = {
   cartItems: CartItem[];
-  addToCart: (product: CartItem) => Promise<void>;
+  addToCart: (product: Omit<CartItem, "id" | "quantity">) => Promise<void>;
   removeFromCart: (id: string) => Promise<void>;
   updateQuantity: (id: string, quantity: number) => Promise<void>;
   clearCart: () => Promise<void>;
@@ -34,81 +40,107 @@ type CartContextType = {
   cartTotal: number;
 };
 
+/* ================== CONTEXT ================== */
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const useCart = () => {
-  const context = useContext(CartContext);
-  if (!context) throw new Error("useCart must be inside <CartProvider>");
-  return context;
+  const ctx = useContext(CartContext);
+  if (!ctx) throw new Error("useCart must be used inside CartProvider");
+  return ctx;
 };
 
+/* ================== PROVIDER ================== */
 export const CartProvider = ({ children }: { children: ReactNode }) => {
+  const { user } = useAuth();
+  const userId = user?.uid;
+
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
 
-  // 🟢 Load giỏ hàng từ Firestore khi mở app
+  /* ===== LOAD CART WHEN USER CHANGES ===== */
   useEffect(() => {
-    const fetchCart = async () => {
-      const snapshot = await getDocs(collection(db, "users", userId, "cart"));
-      const items = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as CartItem[];
-      setCartItems(items);
-    };
-    fetchCart();
-  }, []);
+    if (!userId) {
+      setCartItems([]);
+      return;
+    }
 
-  // 🛒 Thêm vào giỏ hàng + lưu Firebase
-  const addToCart = async (product: CartItem) => {
-  const ref = doc(db, "users", userId, "cart", product.id + (product.size || ""));
+    const ref = collection(db, "users", userId, "cart");
+    const unsub = onSnapshot(ref, snap => {
+      const items = snap.docs.map(d => {
+        const data = d.data() as CartItem;
+        return {
+          ...data,
+          id: d.id, // luôn overwrite cuối cùng → chuẩn nhất
+        };
+      });
+
+      setCartItems(items);
+    });
+
+    return unsub;
+  }, [userId]);
+
+  /* ===== ADD TO CART ===== */
+ const addToCart = async (product: Omit<CartItem, "id" | "quantity">) => {
+  if (!userId) return;
+
+  const sizePart = product.size ? `_${product.size}` : "";
+  const cartId = `${product.productId}${sizePart}`;
+
+  const ref = doc(db, "users", userId, "cart", cartId);
+  const existing = cartItems.find((i) => i.id === cartId);
+
+  if (existing) {
+    await updateDoc(ref, { quantity: existing.quantity + 1 });
+    return; // KHÔNG setCartItems ở đây
+  }
 
   await setDoc(ref, {
-    ...product,
-    image: product.image,
-    size: product.size ?? null
-  }, { merge: true });
-
-  setCartItems(prev => {
-    const exists = prev.find(p => p.id === product.id && p.size === product.size);
-    return exists
-      ? prev.map(p => p.id === product.id && p.size === product.size
-          ? { ...p, quantity: p.quantity + 1 }
-          : p
-        )
-      : [...prev, product];
+    productId: product.productId,
+    name: product.name,
+    price: product.price,
+    quantity: 1,
+    image: product.image ?? null,
+    size: product.size ?? null,
   });
+
+  // ❗ Không cần local setCartItems nữa vì onSnapshot sẽ cập nhật
 };
 
-
-  // ❌ Xóa item khỏi Firebase
+  /* ===== REMOVE ===== */
   const removeFromCart = async (id: string) => {
+    if (!userId) return;
     await deleteDoc(doc(db, "users", userId, "cart", id));
-    setCartItems(prev => prev.filter(item => item.id !== id));
+    setCartItems((prev) => prev.filter((i) => i.id !== id));
   };
 
-  // 🔄 Cập nhật số lượng
+  /* ===== UPDATE QTY ===== */
   const updateQuantity = async (id: string, quantity: number) => {
+    if (!userId) return;
     if (quantity < 1) return removeFromCart(id);
 
     await updateDoc(doc(db, "users", userId, "cart", id), { quantity });
-    setCartItems(prev =>
-      prev.map(item => item.id === id ? { ...item, quantity } : item)
+
+    setCartItems((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, quantity } : i))
     );
   };
 
-  // 🧹 Xóa toàn bộ giỏ hàng
+  /* ===== CLEAR CART ===== */
   const clearCart = async () => {
+    if (!userId) return;
+
     const batch = writeBatch(db);
-    cartItems.forEach(item => {
+    cartItems.forEach((item) => {
       batch.delete(doc(db, "users", userId, "cart", item.id));
     });
+
     await batch.commit();
     setCartItems([]);
   };
 
-  // 🧮 Tổng số item và tiền
-  const cartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
-  const cartTotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  /* ===== TOTAL ===== */
+  const cartCount = cartItems.reduce((s, i) => s + i.quantity, 0);
+  const cartTotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
 
   return (
     <CartContext.Provider
@@ -119,7 +151,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         updateQuantity,
         clearCart,
         cartCount,
-        cartTotal
+        cartTotal,
       }}
     >
       {children}

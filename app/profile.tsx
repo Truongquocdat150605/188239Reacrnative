@@ -1,14 +1,13 @@
-
 import React from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Alert, Switch, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-    ChevronRight,
+    ChevronLeft,
+    ChevronRight, // 🆕 Thêm lại ChevronRight để dùng trong MenuItem
     Package,
     Heart,
     MapPin,
-    Settings,
     LogOut,
     Bell,
     Lock,
@@ -17,17 +16,30 @@ import {
 } from 'lucide-react-native';
 import { COLORS } from '../theme/colors';
 import { useWishlist } from '../lib/WishlistContext';
-import { useAuth } from '../lib/AuthContext'; // 🆕 Import Auth Context
+import { useAuth } from '../lib/AuthContext';
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../app/firebaseConfig";
 import { useEffect, useState } from "react";
+
+// 🆕 Định nghĩa interface cho user để có thuộc tính avatar
+interface AppUser {
+    uid: string;
+    email?: string;
+    name?: string;
+    avatar?: string;
+    // ... các thuộc tính khác nếu có
+}
 
 export default function ProfileScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { wishlistCount } = useWishlist();
-    const { user, logout } = useAuth(); // 🆕 Lấy thông tin user và hàm logout
+    const { user, logout } = useAuth(); 
     const [orderCount, setOrderCount] = useState(0);
+    
+    // 🆕 Ép kiểu user thành AppUser để sử dụng avatar
+    const appUser = user as unknown as AppUser;
+    
     useEffect(() => {
         if (!user?.uid) {
             setOrderCount(0);
@@ -41,7 +53,7 @@ export default function ProfileScreen() {
                     where("userId", "==", user.uid)
                 );
                 const snapshot = await getDocs(q);
-                setOrderCount(snapshot.size); // 🔥 ĐÚNG
+                setOrderCount(snapshot.size);
             } catch (error) {
                 console.error("❌ Lỗi lấy số đơn hàng:", error);
                 setOrderCount(0);
@@ -53,9 +65,8 @@ export default function ProfileScreen() {
 
     const handleLogout = () => {
         const performLogout = () => {
-            logout(); // 🆕 Gọi hàm logout từ context
+            logout();
 
-            // Xóa lịch sử điều hướng và về trang login
             if (router.canDismiss()) {
                 router.dismissAll();
             }
@@ -63,12 +74,10 @@ export default function ProfileScreen() {
         };
 
         if (Platform.OS === 'web') {
-            // Xử lý riêng cho Web
             if (window.confirm("Bạn có chắc muốn đăng xuất?")) {
                 performLogout();
             }
         } else {
-            // Xử lý cho Mobile
             Alert.alert(
                 "Đăng xuất",
                 "Bạn có chắc muốn đăng xuất?",
@@ -97,10 +106,11 @@ export default function ProfileScreen() {
         </TouchableOpacity>
     );
 
-    // Dữ liệu hiển thị (Fallback nếu user chưa đăng nhập - ví dụ đang dev)
-    const displayName = user?.name || 'Khách';
-    const displayEmail = user?.email || 'Vui lòng đăng nhập';
-    const displayAvatar = user?.avatar || 'https://i.pravatar.cc/150?img=default';
+    // Dữ liệu hiển thị - sử dụng appUser thay vì user
+    const displayName = appUser?.name || user?.email?.split('@')[0] || 'Khách';
+    const displayEmail = appUser?.email || user?.email || 'Vui lòng đăng nhập';
+    // 🆕 Sửa avatar URL - nếu không có avatar thì dùng default
+    const displayAvatar = appUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random`;
 
     return (
         <View style={styles.container}>
@@ -216,12 +226,12 @@ export default function ProfileScreen() {
                 <View style={{ height: 50 }} />
             </ScrollView>
 
-            {/* Back Button Overlay */}
+            {/* Back Button */}
             <TouchableOpacity
                 style={[styles.backButton, { top: insets.top + 10 }]}
                 onPress={() => router.back()}
             >
-                <ChevronRight size={24} color="#FFF" style={{ transform: [{ rotate: '180deg' }] }} />
+                <ChevronLeft size={24} color="#FFF" />
             </TouchableOpacity>
         </View>
     );
@@ -245,6 +255,8 @@ const styles = StyleSheet.create({
         position: 'absolute',
         left: 20,
         padding: 8,
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        borderRadius: 20,
         zIndex: 10,
     },
     scrollContent: {

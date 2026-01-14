@@ -1,143 +1,113 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { doc, getDoc, setDoc } from "firebase/firestore";
-import { db } from "../app/firebaseConfig";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth, db } from "../app/firebaseConfig";
 
-// Kiểu dữ liệu User
+// ===== TYPES =====
 export type User = {
-    uid: string;
-    email: string;
-    name: string;
-    avatar?: string;
-    phone?: string;
-    createdAt?: string | Date;
-    updatedAt?: string | Date;
-    role: 'user' | 'admin';
+  uid: string;
+  email: string;
+  name: string;
+  role: 'user' | 'admin';
 };
 
 type AuthContextType = {
-    user: User | null;
-    login: (userData: { uid: string; email: string; name: string }) => Promise<void>;
-    logout: () => void;
-    updateUser: (updatedData: Partial<User>) => void;
-    isAuthenticated: boolean;
-    loading: boolean;
-    isAdmin: boolean;
+  user: User | null;
+  login: (userData: { uid: string; email: string; name: string }) => Promise<void>;
+  logout: () => void;
+  isAuthenticated: boolean;
+  loading: boolean;
+  isAdmin: boolean;
 };
 
+// ===== CONTEXT =====
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
-    const context = useContext(AuthContext);
-    if (!context) {
-        throw new Error('useAuth must be used within AuthProvider');
-    }
-    return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+  return ctx;
 };
 
-// 🔥 HÀM XÁC ĐỊNH ROLE - ĐẶT NGOÀI COMPONENT
+// ===== ROLE HELPER =====
 const determineRole = (email: string): 'user' | 'admin' => {
-    // Danh sách email admin - THAY EMAIL CỦA BẠN VÀO ĐÂY
-    const ADMIN_EMAILS = [
-        'admin@example.com',
-        'dattruongquoc78@gmail.com', // 🔥 THAY BẰNG EMAIL THẬT CỦA BẠN
-        'seller@gmail.com'
-    ];
-
-    if (!email) return 'user';
-
-    const normalizedEmail = email.toLowerCase().trim();
-    const isAdmin = ADMIN_EMAILS.includes(normalizedEmail);
-
-    console.log('🔍 [AUTH] Checking role for:', normalizedEmail, '->', isAdmin ? 'admin' : 'user');
-    return isAdmin ? 'admin' : 'user';
+  const ADMINS = [
+    'dattruongquoc78@gmail.com',
+    'admin@example.com'
+  ];
+  return ADMINS.includes(email.toLowerCase()) ? 'admin' : 'user';
 };
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [user, setUser] = useState<User | null>(null);
-    const [loading, setLoading] = useState(false);
+// ===== PROVIDER =====
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-    const login = async (userData: { uid: string; email: string; name: string }) => {
-        try {
-            console.log('🔍 [AUTH DEBUG] Login start:', userData.email);
-            setLoading(true);
-
-            const userRole = determineRole(userData.email);
-            console.log('🔍 [AUTH DEBUG] Determined role:', userRole);
-
-            // Kiểm tra trong Firestore
-            const userRef = doc(db, "users", userData.uid);
-            console.log('🔍 [AUTH DEBUG] User ref path:', userRef.path);
-
-            const userDoc = await getDoc(userRef);
-            console.log('🔍 [AUTH DEBUG] User doc exists:', userDoc.exists());
-
-            let finalRole = userRole;
-
-            if (userDoc.exists()) {
-                const firestoreData = userDoc.data();
-                console.log('🔍 [AUTH DEBUG] Firestore data:', firestoreData);
-
-                finalRole = firestoreData.role || userRole;
-                console.log('🔍 [AUTH DEBUG] Final role:', finalRole);
-            } else {
-                console.log('🔍 [AUTH DEBUG] Creating new user in Firestore...');
-                await setDoc(userRef, {
-                    uid: userData.uid,
-                    email: userData.email,
-                    name: userData.name,
-                    role: userRole,
-                    createdAt: new Date(),
-                    updatedAt: new Date()
-                });
-            }
-
-            // Set user state
-            setUser({
-                uid: userData.uid,
-                email: userData.email,
-                name: userData.name,
-                role: finalRole
-            });
-
-            console.log('✅ [AUTH] Đã đăng nhập:', userData.email, 'role:', finalRole);
-        } catch (error: any) {
-            console.error('❌ [AUTH ERROR] Lỗi khi login:', error);
-            console.error('❌ [AUTH ERROR] Error details:', error.message, error.code);
-
-            // Fallback: dùng role từ email
-            const fallbackRole = determineRole(userData.email);
-            setUser({
-                uid: userData.uid,
-                email: userData.email,
-                name: userData.name,
-                role: fallbackRole
-            });
-        } finally {
-            setLoading(false);
-            console.log('🔍 [AUTH DEBUG] Login process finished');
-        }
-    };
-
-    const logout = () => {
+  // ✅ QUAN TRỌNG NHẤT: RESTORE LOGIN
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
         setUser(null);
-        console.log('[AUTH] Đã đăng xuất');
-    };
+        setLoading(false);
+        return;
+      }
 
-    const updateUser = (updatedData: Partial<User>) => {
-        setUser(prev => prev ? { ...prev, ...updatedData } : null);
-    };
+      try {
+        const ref = doc(db, "users", firebaseUser.uid);
+        const snap = await getDoc(ref);
 
-    return (
-        <AuthContext.Provider value={{
-            user,
-            login,
-            logout,
-            updateUser,
-            isAuthenticated: !!user,
-            loading,
-            isAdmin: user?.role === 'admin'
-        }}>
-            {children}
-        </AuthContext.Provider>
-    );
+        if (snap.exists()) {
+          const data = snap.data();
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || "",
+            name: data.name || "User",
+            role: data.role || "user",
+          });
+        } else {
+          const role = determineRole(firebaseUser.email || "");
+          const newUser = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || "",
+            name: firebaseUser.email?.split("@")[0] || "User",
+            role,
+          };
+
+          await setDoc(ref, newUser);
+          setUser(newUser);
+        }
+      } catch (e) {
+        console.error("❌ Auth restore error:", e);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    return unsub;
+  }, []);
+
+  // ===== LOGIN MANUAL (SAU SIGN IN) =====
+  const login = async (userData: { uid: string; email: string; name: string }) => {
+    const role = determineRole(userData.email);
+    setUser({ ...userData, role });
+  };
+
+  const logout = () => {
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        logout,
+        loading,
+        isAuthenticated: !!user,
+        isAdmin: user?.role === 'admin',
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 };

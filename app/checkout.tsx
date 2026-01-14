@@ -1,4 +1,4 @@
-import React, { useState, useMemo ,useEffect} from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView,
     Image, Alert, Platform, ActivityIndicator
@@ -14,14 +14,18 @@ import { ArrowLeft, MapPin, Truck, CheckCircle, Wallet } from 'lucide-react-nati
 import { db } from "../app/firebaseConfig";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { useAuth } from '../lib/AuthContext';
+import { getDocs, query, where } from "firebase/firestore";
+import { useBuyNow } from "../lib/BuyNowContext";
 
-// Nếu có AuthContext, dùng:
-// import { useAuth } from '../lib/AuthContext';
-// const { user } = useAuth();
-// const USER_ID = user?.uid || "test-user";
+type Address = {
+    id: string;
+    name: string;
+    phone: string;
+    detail: string;
+    type: 'Home' | 'Office';
+    isDefault: boolean;
+};
 
-// const USER_ID = "test-user";
-// const { user } = useAuth();
 
 
 export default function CheckoutScreen() {
@@ -29,6 +33,9 @@ export default function CheckoutScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const params = useLocalSearchParams();
+    // const [shippingAddress, setShippingAddress] = useState<Address | null>(null);
+    const [shippingAddress, setShippingAddress] = useState<Address | null>(null);
+    const { buyNowItem, setBuyNowItem } = useBuyNow();
 
     const { cartItems, removeFromCart } = useCart();
     const { addNotification } = useNotification();
@@ -44,15 +51,43 @@ export default function CheckoutScreen() {
         }
     }, [params.itemIds]);
 
-    const checkoutItems = cartItems.filter(item => {
-        return selectedItemIds.some((id: string) =>
-            id === item.id || id === `${item.id}` || id === `${item.id}${item.size ? "-" + item.size : ""}`
-        );
-    });
+    let checkoutItems = [];
+
+    if (buyNowItem) {
+        checkoutItems = [buyNowItem];   // ưu tiên Buy Now
+    } else {
+        checkoutItems = cartItems;      // fallback về Cart
+    }
+
     useEffect(() => {
         console.log("🔥 AUTH USER:", user);
         console.log("🔥 AUTH UID:", user?.uid);
     }, [user]);
+    useEffect(() => {
+        if (!user?.uid) return;
+
+        const loadDefaultAddress = async () => {
+            const q = query(
+                collection(db, "users", user.uid, "addresses"),
+                where("isDefault", "==", true)
+            );
+
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+                const docSnap = snap.docs[0];
+                const data = docSnap.data() as Omit<Address, "id">;
+
+                setShippingAddress({
+                    id: docSnap.id,
+                    ...data,
+                });
+            }
+        };
+
+        loadDefaultAddress();
+    }, [user]);
+
+
     const subtotal = checkoutItems.reduce((sum, item) => {
         const price = Number(item.price) || 0;
         const quantity = Number(item.quantity) || 1;
@@ -84,20 +119,15 @@ export default function CheckoutScreen() {
         setIsProcessing(true);
         try {
             // 🔥 KIỂM TRA VÀ LÀM SẠCH DỮ LIỆU
-            const cleanedItems = checkoutItems.map(item => {
-                const cleanedItem = {
-                    productId: item.id || 'unknown',
-                    name: item.name || 'Sản phẩm không tên',
-                    price: Number(item.price) || 0,
-                    quantity: Number(item.quantity) || 1,
-                    image: item.image || item.imageUrl || item.imageUri || '',
-                    size: item.size || null
-                };
+            const cleanedItems = checkoutItems.map(item => ({
+                productId: item.productId,
+                name: item.name || "Tên sản phẩm",
+                price: Number(item.price),
+                quantity: Number(item.quantity),
+                image: item.image || "",
+                size: item.size || null
+            }));
 
-                // Debug từng item
-                console.log("🔥 Item cleaned:", cleanedItem);
-                return cleanedItem;
-            });
 
             // 🔥 KIỂM TRA CÓ ITEM NÀO KHÔNG?
             if (cleanedItems.length === 0) {
@@ -174,13 +204,14 @@ export default function CheckoutScreen() {
         try {
             // 🔥 LÀM SẠCH DỮ LIỆU
             const cleanedItems = checkoutItems.map(item => ({
-                productId: item.id || 'unknown',
-                name: item.name || 'Sản phẩm không tên',
-                price: Number(item.price) || 0,
-                quantity: Number(item.quantity) || 1,
-                image: item.image || item.imageUrl || item.imageUri || '',
+                productId: item.productId,
+                name: item.name || "Tên sản phẩm",
+                price: Number(item.price),
+                quantity: Number(item.quantity),
+                image: item.image || "",
                 size: item.size || null
             }));
+
 
             const orderCode = Date.now();
             const orderData = {
@@ -241,13 +272,52 @@ export default function CheckoutScreen() {
             <ScrollView showsVerticalScrollIndicator={false}>
                 {/* Địa chỉ */}
                 <View style={styles.section}>
-                    <View style={styles.row}>
-                        <MapPin size={20} color={COLORS.primary} />
-                        <Text style={styles.sectionTitle}>Địa chỉ nhận hàng</Text>
+                    <View style={[styles.row, { justifyContent: "space-between" }]}>
+                        <View style={styles.row}>
+                            <MapPin size={20} color={COLORS.primary} />
+                            <Text style={styles.sectionTitle}>Địa chỉ nhận hàng</Text>
+                        </View>
+
+                        <TouchableOpacity onPress={() => router.push("/addresses")}>
+                            <Text style={{ color: COLORS.primary, fontWeight: "600" }}>
+                                Thay đổi
+                            </Text>
+                        </TouchableOpacity>
                     </View>
-                    <Text style={styles.addr}>Nguyễn Văn A - 0901234567</Text>
-                    <Text style={styles.addr}>123 Đường Lê Lợi, Quận 1, TP.HCM</Text>
+
+                    {shippingAddress ? (
+                        <>
+                            <Text style={styles.addr}>
+                                {shippingAddress.name} - {shippingAddress.phone}
+                            </Text>
+                            {shippingAddress ? (
+                                <>
+                                    <Text style={styles.addrName}>
+                                        {shippingAddress.name} | {shippingAddress.phone}
+                                    </Text>
+
+                                    <Text style={styles.addrDetail}>
+                                        {shippingAddress.detail}
+                                    </Text>
+
+                                    <Text style={styles.addrType}>
+                                        {shippingAddress.type === "Home" ? "Nhà riêng" : "Văn phòng"}
+                                    </Text>
+                                </>
+                            ) : (
+                                <Text style={[styles.addr, { color: COLORS.error }]}>
+                                    Chưa có địa chỉ nhận hàng
+                                </Text>
+                            )}
+
+                        </>
+                    ) : (
+                        <Text style={[styles.addr, { color: COLORS.error }]}>
+                            Chưa có địa chỉ nhận hàng
+                        </Text>
+                    )}
                 </View>
+
 
                 {/* Sản phẩm */}
                 <View style={styles.section}>
@@ -384,5 +454,23 @@ const styles = StyleSheet.create({
     loadingText: {
         marginTop: 10,
         color: COLORS.text,
-    }
+    }, addrName: {
+        marginLeft: 28,
+        fontWeight: "600",
+        marginTop: 4,
+    },
+
+    addrDetail: {
+        marginLeft: 28,
+        color: "#555",
+        lineHeight: 20,
+    },
+
+    addrType: {
+        marginLeft: 28,
+        marginTop: 4,
+        fontSize: 12,
+        color: COLORS.primary,
+    },
+
 });

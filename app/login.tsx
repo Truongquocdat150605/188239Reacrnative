@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
 import { useRouter } from "expo-router";
-// import { MOCK_USERS } from '../lib/users';
 import { useAuth } from '../lib/AuthContext';
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
