@@ -1,21 +1,21 @@
+import {
+    addDoc,
+    collection,
+    doc,
+    getDocs,
+    orderBy,
+    query,
+    serverTimestamp,
+    updateDoc,
+    where
+} from "firebase/firestore";
 import React, {
     createContext,
+    ReactNode,
     useContext,
     useEffect,
-    useState,
-    ReactNode
+    useState
 } from "react";
-import {
-    collection,
-    query,
-    where,
-    orderBy,
-    getDocs,
-    addDoc,
-    updateDoc,
-    doc,
-    serverTimestamp
-} from "firebase/firestore";
 import { db } from "../app/firebaseConfig";
 import { useAuth } from "./AuthContext";
 
@@ -31,6 +31,7 @@ export type NotificationItem = {
     type: NotificationType;
     isRead: boolean;
     createdAt: any;
+    date: string;
 };
 
 type NotificationContextType = {

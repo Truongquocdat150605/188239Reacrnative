@@ -1,20 +1,20 @@
+import { useRouter } from 'expo-router';
+import { sendPasswordResetEmail } from "firebase/auth";
+import { ArrowLeft, Mail } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
-    View,
+    ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
-    StyleSheet,
-    Alert,
-    ActivityIndicator,
-    SafeAreaView,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
+    View
 } from 'react-native';
-import { Mail, ArrowLeft } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
-import { sendPasswordResetEmail } from "firebase/auth";
+import { showError, showSuccess } from '../utils/alertHelper';
 import { auth } from "./firebaseConfig"; // ⚠️ sửa path nếu khác
 
 export default function ForgotPasswordScreen() {
@@ -25,8 +25,7 @@ export default function ForgotPasswordScreen() {
 
     const handleSendResetEmail = async () => {
         if (!email.trim()) {
-            Alert.alert("Lỗi", "Vui lòng nhập email");
-            return;
+            showError("Vui lòng nhập email"); return;
         }
 
         try {
@@ -37,21 +36,11 @@ export default function ForgotPasswordScreen() {
                 email.trim().toLowerCase()
             );
 
-            Alert.alert(
-                "📧 Email đã được gửi",
-                "Vui lòng kiểm tra email để đặt lại mật khẩu",
-                [
-                    {
-                        text: "OK",
-                        onPress: () => router.replace("/login"),
-                    },
-                ]
-            );
+            showSuccess("📧 Email đã được gửi\nVui lòng kiểm tra email để đặt lại mật khẩu");
+            setTimeout(() => router.replace("/login"), 1500); // Delay 1.5s
+
         } catch (error: any) {
-            Alert.alert(
-                "❌ Lỗi",
-                error.message || "Không thể gửi email đặt lại mật khẩu"
-            );
+            showError(error.message || "Không thể gửi email đặt lại mật khẩu");
         } finally {
             setIsLoading(false);
         }
@@ -111,7 +100,15 @@ export default function ForgotPasswordScreen() {
                             <Text style={styles.buttonText}>
                                 Gửi email đặt lại mật khẩu
                             </Text>
+
                         )}
+                    </TouchableOpacity>
+                    <TouchableOpacity>
+                        <Text style={{ color: '#0A84FF', textAlign: 'center', marginBottom: 20 }}
+                            onPress={() => router.replace("/login")}
+                        >
+                            Quay lại đăng nhập
+                        </Text>
                     </TouchableOpacity>
 
                     {/* Note */}

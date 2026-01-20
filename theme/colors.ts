@@ -8,6 +8,7 @@ export const COLORS = {
     // 2. Màu Chủ Đạo (Primary & Accent)
     primary: '#DAA520',             // Vàng Đồng (Goldenrod) - Màu nhấn chủ đạo (nút, icon)
     primaryLight: '#F5DEB3',        // Vàng nhạt (dùng cho các đường viền nổi bật)
+    secondary: '#8B4513',           // THÊM MÀU NÀY: Màu nâu đồng (SaddleBrown) - Màu secondary cho nút xem chi tiết
     
     // 3. Màu Chữ (Text & Titles)
     text: '#333333',                // Xám Than Đậm (Tiêu đề, chữ chính)

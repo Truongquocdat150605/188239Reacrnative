@@ -1,22 +1,23 @@
+import { useRouter } from "expo-router";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { Eye, EyeOff, Lock, Mail } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
-    View,
+    ActivityIndicator,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
-    ScrollView,
-    StyleSheet,
-    Alert,
-    ActivityIndicator,
-    SafeAreaView,
+    View,
 } from 'react-native';
-import { Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
-import { useRouter } from "expo-router";
 import { useAuth } from '../lib/AuthContext';
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { showAlert, showError, showSuccess } from '../utils/alertHelper'; // 👈 THÊM DÒNG NÀY
 import { auth, db } from "./firebaseConfig";
-import { useGoogleLogin } from "./services/googleAuth"
+import { useGoogleLogin } from "./services/googleAuth";
+
 export default function LoginScreen() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -29,7 +30,7 @@ export default function LoginScreen() {
 
     const handleLogin = async () => {
         if (!email.trim() || !password.trim()) {
-            Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ Email và Mật khẩu.');
+            showError('Vui lòng nhập đầy đủ Email và Mật khẩu.'); // 👈 ĐÃ SỬA
             return;
         }
 
@@ -72,7 +73,7 @@ export default function LoginScreen() {
                 name,
             });
 
-            Alert.alert('🎉 Thành công', `Chào mừng ${name}!`);
+            showSuccess(`Chào mừng ${name}!`); // 👈 ĐÃ SỬA
 
             // 🔥 PHÂN QUYỀN Ở ĐÂY (QUAN TRỌNG)
             if (role === 'admin') {
@@ -94,19 +95,21 @@ export default function LoginScreen() {
                 errorMessage = 'Tài khoản tạm thời bị khóa, thử lại sau';
             }
 
-            Alert.alert('❌ Đăng nhập thất bại', errorMessage);
+            showError(errorMessage); // 👈 ĐÃ SỬA
         } finally {
             setIsLoading(false);
         }
     };
-
 
     const handleRegister = () => {
         router.push('/SignupScreen');
     };
 
     const handleSocialLogin = (provider: string) => {
-        Alert.alert('Thông báo', `Đang đăng nhập bằng ${provider}... (Chức năng chưa tích hợp API)`);
+        showAlert({ // 👈 ĐÃ SỬA
+            title: 'Thông báo',
+            message: `Đang đăng nhập bằng ${provider}... (Chức năng chưa tích hợp API)`
+        });
     };
 
     // Chuyển hướng sang màn hình Quên Mật Khẩu
@@ -221,6 +224,7 @@ export default function LoginScreen() {
         </SafeAreaView>
     );
 }
+
 
 const styles = StyleSheet.create({
     safeArea: {

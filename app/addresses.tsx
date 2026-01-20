@@ -1,29 +1,29 @@
+import { useRouter } from 'expo-router';
+import { ArrowLeft, Plus } from 'lucide-react-native';
 import React, { useEffect, useState } from 'react';
 import {
-    View,
-    Text,
-    StyleSheet,
-    FlatList,
-    TouchableOpacity,
     Alert,
+    FlatList,
+    StyleSheet,
+    Text,
     TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Plus, Trash2, Edit2 } from 'lucide-react-native';
 import { COLORS } from '../theme/colors';
 
-import { useAuth } from '../lib/AuthContext';
-import { db } from '../app/firebaseConfig';
 import {
-    collection,
-    getDocs,
     addDoc,
+    collection,
     deleteDoc,
     doc,
-    writeBatch,
+    getDocs,
     serverTimestamp,
+    writeBatch,
 } from 'firebase/firestore';
+import { db } from '../app/firebaseConfig';
+import { useAuth } from '../lib/AuthContext';
 
 /* ================= TYPES ================= */
 type Address = {
@@ -37,27 +37,91 @@ type Address = {
     lng?: number;
 };
 
-/* ================= GEOCODE (OUTSIDE COMPONENT) ================= */
 const geocodeAddress = async (address: string) => {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`;
-
-    const res = await fetch(url, {
-        headers: { "User-Agent": "expo-app" }
-    });
-
-    const data = await res.json();
-
-    if (!data || data.length === 0) {
-        throw new Error("Không tìm thấy tọa độ");
+    if (!address || address.trim().length < 5) {
+        throw new Error("Địa chỉ quá ngắn");
     }
 
-    return {
-        lat: parseFloat(data[0].lat),
-        lng: parseFloat(data[0].lon),
-    };
-};
+    // Xóa dấu ngoặc kép nếu có
+    const cleanAddress = address.replace(/"/g, '').trim();
+    const encodedAddress = encodeURIComponent(cleanAddress);
+    
+    // THỬ 2 endpoint khác nhau
+    const urls = [
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&countrycodes=vn&limit=1`,
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1`,
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&accept-language=vi&limit=1`
+    ];
 
-/* ================= COMPONENT ================= */
+    console.log("🌐 Geocoding address:", cleanAddress);
+
+    for (let i = 0; i < urls.length; i++) {
+        try {
+            console.log(`🔗 Trying URL ${i + 1}:`, urls[i]);
+            
+            const res = await fetch(urls[i], {
+                headers: { 
+                    "User-Agent": "MyEcommerceApp/1.0 (myemail@example.com)",
+                    "Accept": "application/json",
+                    "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8"
+                }
+            });
+
+            if (!res.ok) {
+                console.log(`⚠️ URL ${i + 1} failed with status:`, res.status);
+                continue;
+            }
+
+            const data = await res.json();
+            console.log(`📍 Geocode response from URL ${i + 1}:`, data);
+
+            if (data && data.length > 0) {
+                console.log("✅ Geocode success!");
+                return {
+                    lat: parseFloat(data[0].lat),
+                    lng: parseFloat(data[0].lon),
+                    displayName: data[0].display_name,
+                };
+            }
+        } catch (error) {
+            // FIX: Type assertion
+            const err = error as Error;
+            console.warn(`⚠️ URL ${i + 1} error:`, err.message);
+            // Thử URL tiếp theo
+        }
+    }
+
+    // Nếu tất cả đều thất bại, thử fallback API
+    console.log("🔄 Trying fallback API...");
+    return await tryFallbackGeocode(cleanAddress);
+};/* ================= FALLBACK GEOCODE ================= */
+const tryFallbackGeocode = async (address: string) => {
+    // 1. Thử LocationIQ (free tier)
+    try {
+        const LOCATIONIQ_KEY = "pk.YOUR_KEY_HERE"; // Cần đăng ký free
+        const url = `https://us1.locationiq.com/v1/search.php?key=${LOCATIONIQ_KEY}&q=${encodeURIComponent(address)}&format=json&limit=1`;
+        
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (data && data[0]) {
+            return {
+                lat: parseFloat(data[0].lat),
+                lng: parseFloat(data[0].lon),
+                displayName: data[0].display_name,
+            };
+        }
+    } catch (error) {
+    const err = error as Error; // 👈 Thêm dòng này
+    console.warn("LocationIQ failed:", err.message);
+}
+
+    // 2. Thử Google Maps Geocoding (cần API key)
+    // const GOOGLE_API_KEY = "YOUR_GOOGLE_API_KEY";
+    // const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`;
+    
+    throw new Error("Không thể xác định tọa độ. Lưu địa chỉ không có tọa độ.");
+};/* ================= COMPONENT ================= */
 export default function AddressesScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
@@ -92,54 +156,60 @@ export default function AddressesScreen() {
     }, [user]);
 
     /* ================= ADD ADDRESS ================= */
-    const handleAddAddress = async () => {
-        if (!newName || !newPhone || !newDetail) {
-            Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ thông tin');
-            return;
-        }
-        if (!user?.uid) return;
+/* ================= ADD ADDRESS ================= */
+const handleAddAddress = async () => {
+    if (!newName || !newPhone || !newDetail) {
+        Alert.alert('Lỗi', 'Vui lòng nhập đầy đủ thông tin');
+        return;
+    }
+    if (!user?.uid) return;
 
+    try {
+        // THỬ geocode nhưng KHÔNG bắt buộc thành công
+        let location = null;
         try {
-            const location = await geocodeAddress(newDetail);
-
-            await addDoc(
-                collection(db, 'users', user.uid, 'addresses'),
-                {
-                    name: newName,
-                    phone: newPhone,
-                    detail: newDetail,
-                    type: newType,
-                    isDefault: addresses.length === 0,
-                    lat: location.lat,
-                    lng: location.lng,
-                    createdAt: serverTimestamp(),
-                }
-            );
-
-            setShowAddForm(false);
-            setNewName('');
-            setNewPhone('');
-            setNewDetail('');
-
-            Alert.alert('Thành công', 'Đã thêm địa chỉ mới');
-
-            // reload
-            const snap = await getDocs(
-                collection(db, 'users', user.uid, 'addresses')
-            );
-            const list = snap.docs.map(doc => ({
-                id: doc.id,
-                ...(doc.data() as Omit<Address, 'id'>),
-            }));
-            setAddresses(list);
-
-        } catch (err) {
-            console.error(err);
-            Alert.alert("Lỗi", "Không xác định được vị trí địa chỉ");
+            location = await geocodeAddress(newDetail);
+            console.log("📍 Geocode success:", location);
+        } catch (geocodeError) {
+            console.warn("⚠️ Geocode failed, saving without coordinates:", geocodeError);
+            // Vẫn tiếp tục lưu địa chỉ, không có tọa độ
         }
-    };
 
-    /* ================= SET DEFAULT ================= */
+        await addDoc(
+            collection(db, 'users', user.uid, 'addresses'),
+            {
+                name: newName,
+                phone: newPhone,
+                detail: newDetail,
+                type: newType,
+                isDefault: addresses.length === 0,
+                ...(location && { lat: location.lat, lng: location.lng }), // Chỉ thêm nếu có
+                createdAt: serverTimestamp(),
+            }
+        );
+
+        setShowAddForm(false);
+        setNewName('');
+        setNewPhone('');
+        setNewDetail('');
+
+        Alert.alert('Thành công', 'Đã thêm địa chỉ mới');
+
+        // reload
+        const snap = await getDocs(
+            collection(db, 'users', user.uid, 'addresses')
+        );
+        const list = snap.docs.map(doc => ({
+            id: doc.id,
+            ...(doc.data() as Omit<Address, 'id'>),
+        }));
+        setAddresses(list);
+
+    } catch (err) {
+        console.error(err);
+        Alert.alert("Lỗi", "Không thể thêm địa chỉ. Vui lòng thử lại.");
+    }
+};    /* ================= SET DEFAULT ================= */
     const handleSetDefault = async (id: string) => {
         if (!user?.uid) return;
 

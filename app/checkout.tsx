@@ -1,49 +1,77 @@
-import React, { useState, useMemo, useEffect } from 'react';
+// CheckoutScreen.tsx
+import { useLocalSearchParams, useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import {
-    View, Text, StyleSheet, TouchableOpacity, ScrollView,
-    Image, Alert, Platform, ActivityIndicator
-} from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS } from '../theme/colors';
-import { API_BASE } from "../app/services/config";
-import * as Linking from "expo-linking";
-import { useCart } from '../lib/CartContext';
-import { useNotification } from '../lib/NotificationContext';
-import { ArrowLeft, MapPin, Truck, CheckCircle, Wallet } from 'lucide-react-native';
+    addDoc,
+    collection,
+    doc,
+    getDocs,
+    query,
+    serverTimestamp,
+    updateDoc,
+    where,
+} from "firebase/firestore";
+import {
+    ArrowLeft,
+    CheckCircle,
+    QrCode,
+    Truck,
+    Wallet,
+} from "lucide-react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+    ActivityIndicator,
+    Image,
+    Linking,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 import { db } from "../app/firebaseConfig";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { useAuth } from '../lib/AuthContext';
-import { getDocs, query, where } from "firebase/firestore";
+import { useAuth } from "../lib/AuthContext";
 import { useBuyNow } from "../lib/BuyNowContext";
+import { useCart } from "../lib/CartContext";
+import { useNotification } from "../lib/NotificationContext";
+import { COLORS } from "../theme/colors";
+import { showAlert, showError, showSuccess } from "../utils/alertHelper"; // 👈 THÊM
 
 type Address = {
     id: string;
     name: string;
     phone: string;
     detail: string;
-    type: 'Home' | 'Office';
+    type: "Home" | "Office";
     isDefault: boolean;
 };
 
-
+// ⚠️ DEMO KEY
+const PAYOS_CLIENT_ID = "07a3480e-65f6-481b-93c7-90bb3e01b28e";
+const PAYOS_API_KEY = "e31e1fcc-ba45-4460-bc0a-542a467706bb";
+const PAYOS_CHECKSUM_KEY = "61f5c3b171e082eaa7cf4ecce1fb4d8f7a185e6b68cfd94260ddfb7d23ff6231";
+const WEB_RETURN_URL = "http://localhost:8081";
+const APP_RETURN_URL = "myapp://payos-return";
 
 export default function CheckoutScreen() {
+    // ===== HOOKS (PHẢI ĐỂ TẤT CẢ Ở ĐẦU) =====
     const { user } = useAuth();
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const params = useLocalSearchParams();
-    // const [shippingAddress, setShippingAddress] = useState<Address | null>(null);
-    const [shippingAddress, setShippingAddress] = useState<Address | null>(null);
     const { buyNowItem, setBuyNowItem } = useBuyNow();
-
     const { cartItems, removeFromCart } = useCart();
     const { addNotification } = useNotification();
 
-    const [paymentMethod, setPaymentMethod] = useState<'cod' | 'banking'>('cod');
+    const [shippingAddress, setShippingAddress] = useState<Address | null>(null);
+    const [paymentMethod, setPaymentMethod] = useState<"cod" | "payos">("cod");
     const [isProcessing, setIsProcessing] = useState(false);
 
-    const selectedItemIds = useMemo(() => {
+    // Danh sách id đã chọn trong giỏ
+    const selectedItemIds = useMemo<string[]>(() => {
         try {
             return params.itemIds ? JSON.parse(params.itemIds as string) : [];
         } catch {
@@ -51,52 +79,123 @@ export default function CheckoutScreen() {
         }
     }, [params.itemIds]);
 
-    let checkoutItems = [];
+    // Items cần checkout
+    const checkoutItems = buyNowItem ? [buyNowItem] : cartItems;
 
-    if (buyNowItem) {
-        checkoutItems = [buyNowItem];   // ưu tiên Buy Now
-    } else {
-        checkoutItems = cartItems;      // fallback về Cart
-    }
-
-    useEffect(() => {
-        console.log("🔥 AUTH USER:", user);
-        console.log("🔥 AUTH UID:", user?.uid);
-    }, [user]);
+    // ===== LOAD ĐỊA CHỈ MẶC ĐỊNH =====
     useEffect(() => {
         if (!user?.uid) return;
 
-        const loadDefaultAddress = async () => {
-            const q = query(
-                collection(db, "users", user.uid, "addresses"),
-                where("isDefault", "==", true)
-            );
-
-            const snap = await getDocs(q);
-            if (!snap.empty) {
-                const docSnap = snap.docs[0];
-                const data = docSnap.data() as Omit<Address, "id">;
-
-                setShippingAddress({
-                    id: docSnap.id,
-                    ...data,
-                });
+        const loadDefault = async () => {
+            try {
+                const q = query(
+                    collection(db, "users", user.uid, "addresses"),
+                    where("isDefault", "==", true)
+                );
+                const snap = await getDocs(q);
+                if (!snap.empty) {
+                    const docSnap = snap.docs[0];
+                    const data = docSnap.data() as Omit<Address, "id">;
+                    setShippingAddress({ id: docSnap.id, ...data });
+                }
+            } catch (err) {
+                console.log("❌ Lỗi load default address:", err);
             }
         };
 
-        loadDefaultAddress();
+        loadDefault();
     }, [user]);
 
+    // ===== XỬ LÝ KHI PAYOS REDIRECT VỀ =====
+    useEffect(() => {
+        const handleUrl = async (url: string | null) => {
+            try {
+                if (!url || !user?.uid) return;
+                
+                const urlObj = new URL(url);
+                const status = urlObj.searchParams.get("status");
+                const orderCodeParam = urlObj.searchParams.get("orderCode");
 
+                if (!status || !orderCodeParam) return;
+                const orderCode = Number(orderCodeParam);
+                if (!orderCode) return;
+
+                // Tìm đơn
+                const q = query(
+                    collection(db, "orders"),
+                    where("orderCode", "==", orderCode),
+                    where("userId", "==", user.uid)
+                );
+                const snap = await getDocs(q);
+                if (snap.empty) return;
+
+                const orderDoc = snap.docs[0];
+                const orderRef = doc(db, "orders", orderDoc.id);
+
+                if (status === "PAID") {
+                    await updateDoc(orderRef, {
+                        paymentStatus: "paid",
+                        status: "confirmed",
+                        updatedAt: serverTimestamp(),
+                    });
+
+                    cleanupCart();
+
+                    addNotification({
+                        title: "Thanh toán thành công ✅",
+                        message: `Đơn hàng ${orderDoc.data().orderNumber} đã được thanh toán`,
+                        type: "order",
+                    });
+
+                    showAlert({
+                        title: "🎉 Thanh toán thành công!",
+                        message: "Đơn hàng của bạn đã được thanh toán thành công!",
+                        confirmText: "Xem đơn hàng",
+                        onConfirm: () => router.push(`/orders`),
+                        cancelText: "Về trang chủ",
+                        onCancel: () => router.replace("/home")
+                    });
+                } else if (status === "CANCEL") {
+                    await updateDoc(orderRef, {
+                        paymentStatus: "cancel",
+                        status: "cancelled",
+                        updatedAt: serverTimestamp(),
+                    });
+
+                    showError("Bạn đã huỷ thanh toán PayOS. Đơn hàng đã được hủy.");
+                }
+            } catch (err) {
+                console.error("❌ handleUrl error:", err);
+            }
+        };
+
+        // Xử lý URL ban đầu
+        const checkInitialUrl = async () => {
+            if (Platform.OS === "web") {
+                await handleUrl(window.location.href);
+            } else {
+                const initial = await Linking.getInitialURL();
+                await handleUrl(initial);
+            }
+        };
+
+        checkInitialUrl();
+
+        // Lắng nghe deep-link
+        const sub = Linking.addEventListener("url", ({ url }) => handleUrl(url));
+        return () => sub.remove();
+    }, [user]);
+
+    // ===== CALCULATIONS =====
     const subtotal = checkoutItems.reduce((sum, item) => {
-        const price = Number(item.price) || 0;
-        const quantity = Number(item.quantity) || 1;
-        return sum + price * quantity;
+        return sum + (Number(item.price) || 0) * (Number(item.quantity) || 1);
     }, 0);
     const shippingFee = 30000;
     const total = subtotal + shippingFee;
 
     const formatPrice = (price: number) => price.toLocaleString("vi-VN") + "₫";
+
+    // ===== EARLY RETURNS (SAU TẤT CẢ HOOKS) =====
     if (!user?.uid) {
         return (
             <View style={styles.empty}>
@@ -108,145 +207,6 @@ export default function CheckoutScreen() {
         );
     }
 
-
-    // 🔥 LƯU ĐƠN HÀNG LÊN FIREBASE - Collection "orders"
-    const handlePlaceOrder = async () => {
-        if (checkoutItems.length === 0) {
-            Alert.alert("Lỗi", "Không có sản phẩm nào!");
-            return;
-        }
-
-        setIsProcessing(true);
-        try {
-            // 🔥 KIỂM TRA VÀ LÀM SẠCH DỮ LIỆU
-            const cleanedItems = checkoutItems.map(item => ({
-                productId: item.productId,
-                name: item.name || "Tên sản phẩm",
-                price: Number(item.price),
-                quantity: Number(item.quantity),
-                image: item.image || "",
-                size: item.size || null
-            }));
-
-
-            // 🔥 KIỂM TRA CÓ ITEM NÀO KHÔNG?
-            if (cleanedItems.length === 0) {
-                throw new Error("Không có sản phẩm hợp lệ để đặt hàng");
-            }
-
-            const orderData = {
-                userId: user?.uid,
-                orderNumber: `ORD-${Date.now()}`,
-                items: cleanedItems, // 🔥 DÙNG cleanedItems
-                subtotal: Number(subtotal) || 0,
-                shippingFee: Number(shippingFee) || 0,
-                totalAmount: Number(total) || 0,
-                paymentMethod: paymentMethod || 'cod',
-                paymentStatus: paymentMethod === 'cod' ? 'pending' : 'paid',
-                status: "pending",
-                shippingAddress: {
-                    name: "Nguyễn Văn A",
-                    phone: "0901234567",
-                    address: "123 Đường Lê Lợi, Quận 1, TP.HCM"
-                },
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-            };
-
-            // 🔥 LOG DỮ LIỆU TRƯỚC KHI GỬI
-            console.log("🔥 Order data to save:", JSON.stringify(orderData, null, 2));
-
-            // 🔥 Lưu vào collection "orders"
-            const orderRef = await addDoc(collection(db, "orders"), orderData);
-
-            console.log("✅ Order created with ID:", orderRef.id);
-
-            // Xóa item khỏi giỏ hàng
-            selectedItemIds.forEach((id: string) => {
-                try {
-                    removeFromCart(id);
-                } catch (error) {
-                    console.error("❌ Lỗi xóa item khỏi cart:", error);
-                }
-            });
-
-            addNotification({
-                title: "Đặt hàng thành công 🎉",
-                message: `Mã đơn: ${orderData.orderNumber}`,
-                type: "order"
-            });
-
-            Alert.alert(
-                "🎉 Thành công!",
-                `Đơn hàng ${orderData.orderNumber} đã được tạo thành công!`,
-                [{
-                    text: "Về trang chủ",
-                    onPress: () => router.replace("/home")
-                }]
-            );
-
-        } catch (error: any) {
-            console.error("❌ Lỗi tạo đơn hàng:", error);
-            console.error("❌ Error details:", error.message, error.code);
-            Alert.alert("Lỗi", `Không thể đặt hàng: ${error.message}`);
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    const handlePayWithPayOS = async () => {
-        if (checkoutItems.length === 0) {
-            Alert.alert("Lỗi", "Không có sản phẩm nào!");
-            return;
-        }
-
-        setIsProcessing(true);
-        try {
-            // 🔥 LÀM SẠCH DỮ LIỆU
-            const cleanedItems = checkoutItems.map(item => ({
-                productId: item.productId,
-                name: item.name || "Tên sản phẩm",
-                price: Number(item.price),
-                quantity: Number(item.quantity),
-                image: item.image || "",
-                size: item.size || null
-            }));
-
-
-            const orderCode = Date.now();
-            const orderData = {
-                userId: user?.uid,
-                orderNumber: `ORD-${orderCode}`,
-                items: cleanedItems,
-                subtotal: Number(subtotal) || 0,
-                shippingFee: Number(shippingFee) || 0,
-                totalAmount: Number(total) || 0,
-                paymentMethod: "payos",
-                paymentStatus: "pending",
-                status: "pending",
-                shippingAddress: {
-                    name: "Nguyễn Văn A",
-                    phone: "0901234567",
-                    address: "123 Đường Lê Lợi, Quận 1, TP.HCM"
-                },
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-            };
-
-            console.log("🔥 PayOS Order data:", JSON.stringify(orderData, null, 2));
-
-            // 🔥 Lưu vào collection "orders"
-            await addDoc(collection(db, "orders"), orderData);
-
-            // ... phần còn lại của PayOS
-
-        } catch (error: any) {
-            console.error("❌ Lỗi PayOS:", error);
-            Alert.alert("⚠ Lỗi", `Không thể tạo đơn hàng: ${error.message}`);
-        } finally {
-            setIsProcessing(false);
-        }
-    };
     if (!checkoutItems.length) {
         return (
             <View style={styles.empty}>
@@ -258,6 +218,188 @@ export default function CheckoutScreen() {
         );
     }
 
+    // ===== HELPER FUNCTIONS =====
+    const createSignature = (data: string): string => {
+        const CryptoJS = require('crypto-js');
+        const hmac = CryptoJS.HmacSHA256(data, PAYOS_CHECKSUM_KEY);
+        return hmac.toString(CryptoJS.enc.Hex);
+    };
+
+    const normalizeString = (input: string): string => {
+        if (!input) return "";
+        return input
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-zA-Z0-9 ]/g, "")
+            .trim();
+    };
+
+    const cleanupCart = () => {
+        if (selectedItemIds.length > 0) {
+            selectedItemIds.forEach((id: string) => removeFromCart(id));
+        }
+        if (buyNowItem) setBuyNowItem(null);
+    };
+
+    // ===== CREATE ORDER =====
+    const createOrder = async (method: "cod" | "payos") => {
+        console.log("📝 Creating Firestore order...");
+
+        const cleanedItems = checkoutItems.map((item) => ({
+            productId: item.productId || "unknown",
+            name: item.name || "Sản phẩm",
+            price: Math.round(Number(item.price) || 0),
+            quantity: Number(item.quantity) || 1,
+            image: item.image || "",
+            size: item.size || null,
+        }));
+
+        const orderCode = Math.floor(100000 + Math.random() * 900000);
+        const orderNumber = `ORD-${orderCode}`;
+
+        const orderData = {
+            userId: user.uid,
+            orderNumber,
+            items: cleanedItems,
+            subtotal: Math.round(Number(subtotal) || 0),
+            shippingFee: Math.round(Number(shippingFee) || 0),
+            totalAmount: Math.round(Number(total) || 0),
+            paymentMethod: method,
+            paymentStatus: "pending",
+            status: "pending",
+            shippingAddress: shippingAddress
+                ? {
+                    name: shippingAddress.name,
+                    phone: shippingAddress.phone,
+                    address: shippingAddress.detail,
+                }
+                : {
+                    name: "Khách hàng",
+                    phone: "0900000000",
+                    address: "Địa chỉ mẫu",
+                },
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            orderCode,
+        };
+
+        const orderRef = await addDoc(collection(db, "orders"), orderData);
+        console.log("✅ Order created with ID:", orderRef.id);
+
+        return { orderCode, orderNumber, orderId: orderRef.id };
+    };
+
+    // ===== COD =====
+    const handleCOD = async () => {
+        console.log("💵 [COD] Start");
+
+        if (checkoutItems.length === 0) {
+            showError("Không có sản phẩm nào!");
+            return;
+        }
+
+        setIsProcessing(true);
+        try {
+            const { orderNumber } = await createOrder("cod");
+            cleanupCart();
+            addNotification({
+                title: "Đặt hàng thành công 🎉",
+                message: `Mã đơn: ${orderNumber}`,
+                type: "order",
+            });
+
+            showSuccess(`Đơn hàng ${orderNumber} đã được tạo!`);
+            setTimeout(() => router.replace("/home"), 1500);
+        } catch (error: any) {
+            console.error("❌ [COD] Error:", error);
+            showError(error?.message || "Không thể đặt hàng");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    // ===== PAYOS =====
+    const handlePayOS = async () => {
+        console.log("🏦 [PayOS] Start");
+
+        if (checkoutItems.length === 0) {
+            showError("Không có sản phẩm nào!");
+            return;
+        }
+
+        if (total < 1000) {
+            showError("Số tiền thanh toán tối thiểu là 1,000đ");
+            return;
+        }
+
+        setIsProcessing(true);
+        try {
+            const { orderCode, orderId } = await createOrder("payos");
+            console.log("✅ [PayOS] Order created, orderCode:", orderCode);
+
+            const returnUrl = Platform.OS === "web"
+                ? `${WEB_RETURN_URL}?status=PAID&orderCode=${orderCode}`
+                : `${APP_RETURN_URL}?status=PAID&orderCode=${orderCode}`;
+
+            const cancelUrl = Platform.OS === "web"
+                ? `${WEB_RETURN_URL}?status=CANCEL&orderCode=${orderCode}`
+                : `${APP_RETURN_URL}?status=CANCEL&orderCode=${orderCode}`;
+
+            const description = `ĐH #${orderCode}`;
+            const dataForSignature = `amount=${Math.round(total)}&cancelUrl=${cancelUrl}&description=${description}&orderCode=${orderCode}&returnUrl=${returnUrl}`;
+            const signature = createSignature(dataForSignature);
+
+            const requestBody = {
+                orderCode: orderCode,
+                amount: Math.round(total),
+                description: description,
+                returnUrl: returnUrl,
+                cancelUrl: cancelUrl,
+                items: checkoutItems.map(item => ({
+                    name: normalizeString(item.name || "Sản phẩm"),
+                    quantity: Number(item.quantity) || 1,
+                    price: Math.round(Number(item.price) || 0)
+                })),
+                buyerName: normalizeString(shippingAddress?.name || user?.email?.split('@')[0] || "Khách hàng"),
+                buyerEmail: user?.email || "",
+                buyerPhone: shippingAddress?.phone || "",
+                buyerAddress: shippingAddress?.detail || "",
+                signature: signature
+            };
+
+            const headers = {
+                "Content-Type": "application/json",
+                "x-client-id": PAYOS_CLIENT_ID,
+                "x-api-key": PAYOS_API_KEY,
+            };
+
+            const res = await fetch("https://api-merchant.payos.vn/v2/payment-requests", {
+                method: "POST",
+                headers: headers,
+                body: JSON.stringify(requestBody),
+            });
+
+            const data = await res.json();
+            if (data.code !== "00" || !data?.data?.checkoutUrl) {
+                throw new Error(data.desc || "Không lấy được URL thanh toán");
+            }
+
+            const checkoutUrl = data.data.checkoutUrl as string;
+            if (Platform.OS === "web") {
+                window.open(checkoutUrl, "_blank");
+            } else {
+                await WebBrowser.openBrowserAsync(checkoutUrl);
+            }
+
+        } catch (err: any) {
+            console.error("❌ [PayOS] Error:", err);
+            showError(err?.message || "Không thể thanh toán PayOS");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    // ===== RENDER =====
     return (
         <View style={styles.container}>
             {/* Header */}
@@ -270,71 +412,74 @@ export default function CheckoutScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
-                {/* Địa chỉ */}
-                <View style={styles.section}>
-                    <View style={[styles.row, { justifyContent: "space-between" }]}>
-                        <View style={styles.row}>
-                            <MapPin size={20} color={COLORS.primary} />
-                            <Text style={styles.sectionTitle}>Địa chỉ nhận hàng</Text>
-                        </View>
-
-                        <TouchableOpacity onPress={() => router.push("/addresses")}>
-                            <Text style={{ color: COLORS.primary, fontWeight: "600" }}>
-                                Thay đổi
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {shippingAddress ? (
-                        <>
-                            <Text style={styles.addr}>
-                                {shippingAddress.name} - {shippingAddress.phone}
-                            </Text>
-                            {shippingAddress ? (
-                                <>
-                                    <Text style={styles.addrName}>
-                                        {shippingAddress.name} | {shippingAddress.phone}
-                                    </Text>
-
-                                    <Text style={styles.addrDetail}>
-                                        {shippingAddress.detail}
-                                    </Text>
-
-                                    <Text style={styles.addrType}>
-                                        {shippingAddress.type === "Home" ? "Nhà riêng" : "Văn phòng"}
-                                    </Text>
-                                </>
-                            ) : (
-                                <Text style={[styles.addr, { color: COLORS.error }]}>
-                                    Chưa có địa chỉ nhận hàng
-                                </Text>
-                            )}
-
-                        </>
-                    ) : (
-                        <Text style={[styles.addr, { color: COLORS.error }]}>
-                            Chưa có địa chỉ nhận hàng
-                        </Text>
-                    )}
-                </View>
-
-
                 {/* Sản phẩm */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Sản phẩm ({checkoutItems.length})</Text>
-                    {checkoutItems.map(item => (
+                    <Text style={styles.sectionTitle}>
+                        Sản phẩm ({checkoutItems.length})
+                    </Text>
+                    {checkoutItems.map((item) => (
                         <View key={item.id} style={styles.itemRow}>
                             <Image
-                                source={item.image ? { uri: item.image } : require("../assets/products/placeholder.png")}
+                                source={
+                                    item.image
+                                        ? { uri: item.image }
+                                        : require("../assets/products/placeholder.png")
+                                }
                                 style={styles.itemImage}
                             />
                             <View style={{ flex: 1 }}>
-                                <Text numberOfLines={1} style={styles.itemName}>{item.name}</Text>
-                                <Text>{formatPrice(item.price)} x {item.quantity}</Text>
+                                <Text numberOfLines={1} style={styles.itemName}>
+                                    {item.name}
+                                </Text>
+                                <Text>
+                                    {formatPrice(item.price)} x {item.quantity}
+                                </Text>
                                 {item.size && <Text>Size: {item.size}</Text>}
                             </View>
                         </View>
                     ))}
+                </View>
+
+                {/* Địa chỉ */}
+                <View style={styles.section}>
+                    <View style={styles.row}>
+                        <Text style={styles.sectionTitle}>📍 Địa chỉ giao hàng</Text>
+                        <TouchableOpacity 
+                            onPress={() => router.push('/addresses')}
+                            style={styles.changeAddressBtn}
+                        >
+                            <Text style={styles.changeAddressText}>Thay đổi</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    {shippingAddress ? (
+                        <View style={styles.addressCard}>
+                            <View style={styles.addressHeader}>
+                                <Text style={styles.addressName}>{shippingAddress.name}</Text>
+                                {shippingAddress.isDefault && (
+                                    <Text style={styles.defaultBadge}>Mặc định</Text>
+                                )}
+                            </View>
+                            <Text style={styles.addressPhone}>📞 {shippingAddress.phone}</Text>
+                            <Text style={styles.addressDetail}>{shippingAddress.detail}</Text>
+                            <Text style={styles.addressType}>
+                                {shippingAddress.type === 'Home' ? '🏠 Nhà riêng' : '🏢 Văn phòng'}
+                            </Text>
+                        </View>
+                    ) : (
+                        <View style={styles.noAddressCard}>
+                            <Text style={styles.noAddressText}>Chưa có địa chỉ giao hàng</Text>
+                            <Text style={styles.noAddressSubtext}>
+                                Sẽ dùng "Địa chỉ mẫu" nếu bạn không thêm địa chỉ
+                            </Text>
+                            <TouchableOpacity 
+                                style={styles.addAddressBtn}
+                                onPress={() => router.push('/addresses')}
+                            >
+                                <Text style={styles.addAddressText}>+ Thêm địa chỉ mới</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
                 </View>
 
                 {/* Phương thức thanh toán */}
@@ -345,132 +490,254 @@ export default function CheckoutScreen() {
                     </View>
 
                     <TouchableOpacity
-                        style={[styles.option, paymentMethod === 'cod' && styles.activeOption]}
-                        onPress={() => setPaymentMethod('cod')}>
-                        <Text>Thanh toán khi nhận hàng (COD)</Text>
+                        style={[
+                            styles.option,
+                            paymentMethod === "cod" && styles.activeOption,
+                        ]}
+                        onPress={() => setPaymentMethod("cod")}
+                    >
+                        <Truck size={20} color="#28a745" />
+                        <Text style={styles.optionText}>COD - Thanh toán khi nhận hàng</Text>
                         {paymentMethod === "cod" && <CheckCircle color={COLORS.primary} />}
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.option, paymentMethod === 'banking' && styles.activeOption]}
-                        onPress={() => setPaymentMethod('banking')}>
-                        <Text>Chuyển khoản ngân hàng</Text>
-                        {paymentMethod === "banking" && <CheckCircle color={COLORS.primary} />}
+                        style={[
+                            styles.option,
+                            paymentMethod === "payos" && styles.activeOption,
+                        ]}
+                        onPress={() => setPaymentMethod("payos")}
+                    >
+                        <QrCode size={20} color="#2196f3" />
+                        <Text style={styles.optionText}>QR Banking (PayOS)</Text>
+                        {paymentMethod === "payos" && <CheckCircle color={COLORS.primary} />}
                     </TouchableOpacity>
                 </View>
 
                 {/* Tổng tiền */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Tổng thanh toán</Text>
-                    <Text>Tạm tính: {formatPrice(subtotal)}</Text>
-                    <Text>Phí ship: {formatPrice(shippingFee)}</Text>
-                    <Text style={styles.total}>Tổng: {formatPrice(total)}</Text>
+                    <View style={styles.totalRow}>
+                        <Text>Tạm tính:</Text>
+                        <Text>{formatPrice(subtotal)}</Text>
+                    </View>
+                    <View style={styles.totalRow}>
+                        <Text>Phí ship:</Text>
+                        <Text>{formatPrice(shippingFee)}</Text>
+                    </View>
+                    <View style={[styles.totalRow, { marginTop: 10 }]}>
+                        <Text style={{ fontWeight: "bold" }}>Tổng cộng:</Text>
+                        <Text style={styles.totalAmount}>{formatPrice(total)}</Text>
+                    </View>
                 </View>
             </ScrollView>
 
             {/* Footer */}
-            <View style={styles.footer}>
-                <Text style={styles.total}>Tổng: {formatPrice(total)}</Text>
-
-                {paymentMethod === "cod" ? (
-                    <TouchableOpacity
-                        style={styles.payBtn}
-                        onPress={handlePlaceOrder}
-                        disabled={isProcessing}
-                    >
-                        {isProcessing ? (
-                            <ActivityIndicator color="white" />
-                        ) : (
-                            <Text style={styles.payText}>Đặt hàng (COD)</Text>
-                        )}
-                    </TouchableOpacity>
-                ) : (
-                    <TouchableOpacity
-                        style={styles.payBtn}
-                        onPress={handlePayWithPayOS}
-                        disabled={isProcessing}
-                    >
-                        {isProcessing ? (
-                            <ActivityIndicator color="white" />
-                        ) : (
-                            <Text style={styles.payText}>Thanh toán PayOS</Text>
-                        )}
-                    </TouchableOpacity>
-                )}
-            </View>
-
-            {/* Loading Overlay */}
-            {isProcessing && (
-                <View style={styles.loadingOverlay}>
-                    <ActivityIndicator size="large" color={COLORS.primary} />
-                    <Text style={styles.loadingText}>Đang xử lý đơn hàng...</Text>
+            <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
+                <View style={{ flex: 1 }}>
+                    <Text style={styles.totalLabel}>Tổng:</Text>
+                    <Text style={styles.totalAmount}>{formatPrice(total)}</Text>
                 </View>
-            )}
+
+                <TouchableOpacity
+                    style={[
+                        styles.payBtn,
+                        isProcessing && styles.payBtnDisabled
+                    ]}
+                    onPress={paymentMethod === "cod" ? handleCOD : handlePayOS}
+                    disabled={isProcessing}
+                >
+                    {isProcessing ? (
+                        <ActivityIndicator color="white" />
+                    ) : (
+                        <Text style={styles.payText}>
+                            {paymentMethod === "cod" ? "Đặt hàng (COD)" : "Thanh toán PayOS"}
+                        </Text>
+                    )}
+                </TouchableOpacity>
+            </View>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F5F5F5' },
+    container: { flex: 1, backgroundColor: "#F5F5F5" },
     header: {
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        padding: 15, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#ddd'
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: 15,
+        backgroundColor: "white",
+        borderBottomWidth: 1,
+        borderBottomColor: "#ddd",
     },
     headerTitle: { fontSize: 18, fontWeight: "bold" },
-    section: { backgroundColor: 'white', padding: 15, marginTop: 10 },
-    row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    sectionTitle: { fontWeight: "bold", fontSize: 15, marginVertical: 8 },
-    addr: { color: "#666", marginLeft: 28 },
-    itemRow: { flexDirection: 'row', gap: 10, marginVertical: 8 },
-    itemImage: { width: 60, height: 60, borderRadius: 8, backgroundColor: '#eee' },
-    itemName: { fontWeight: '600', marginBottom: 4 },
-    option: {
-        padding: 12, borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
-        marginTop: 10, flexDirection: "row", justifyContent: "space-between"
-    },
-    activeOption: { borderColor: COLORS.primary, backgroundColor: '#F8FAFF' },
-    total: { fontWeight: "bold", fontSize: 16, marginTop: 8 },
-    footer: {
-        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-        padding: 15, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#ddd'
-    },
-    payBtn: {
-        backgroundColor: COLORS.primary, padding: 12, borderRadius: 8, minWidth: 140,
-        alignItems: 'center'
-    },
-    payText: { color: 'white', fontWeight: 'bold' },
-    empty: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    loadingOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(255,255,255,0.8)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 1000,
-    },
-    loadingText: {
+    section: {
+        backgroundColor: "white",
+        padding: 15,
         marginTop: 10,
-        color: COLORS.text,
-    }, addrName: {
-        marginLeft: 28,
-        fontWeight: "600",
-        marginTop: 4,
+        marginHorizontal: 10,
+        borderRadius: 8,
     },
-
-    addrDetail: {
-        marginLeft: 28,
-        color: "#555",
-        lineHeight: 20,
+    row: { flexDirection: "row", alignItems: "center", gap: 8 },
+    sectionTitle: { fontWeight: "bold", fontSize: 15, marginVertical: 8 },
+    itemRow: {
+        flexDirection: "row",
+        gap: 10,
+        marginVertical: 8,
+        alignItems: "center",
     },
-
-    addrType: {
-        marginLeft: 28,
-        marginTop: 4,
-        fontSize: 12,
+    itemImage: {
+        width: 60,
+        height: 60,
+        borderRadius: 8,
+        backgroundColor: "#eee",
+    },
+    itemName: { fontWeight: "600", marginBottom: 4, fontSize: 14 },
+    option: {
+        padding: 12,
+        borderWidth: 1,
+        borderColor: "#ddd",
+        borderRadius: 8,
+        marginTop: 10,
+        flexDirection: "row",
+        justifyContent: "flex-start",
+        alignItems: "center",
+        gap: 10,
+    },
+    optionText: {
+        fontSize: 14,
+        flex: 1,
+    },
+    activeOption: {
+        borderColor: COLORS.primary,
+        backgroundColor: "#F8FAFF",
+    },
+    totalRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        marginVertical: 4,
+    },
+    totalAmount: {
+        fontWeight: "bold",
+        fontSize: 18,
         color: COLORS.primary,
     },
-
+    footer: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: 15,
+        backgroundColor: "white",
+        borderTopWidth: 1,
+        borderTopColor: "#ddd",
+    },
+    totalLabel: {
+        fontSize: 12,
+        color: "#666",
+    },
+    payBtn: {
+        backgroundColor: COLORS.primary,
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderRadius: 8,
+        minWidth: 160,
+        alignItems: "center",
+    },
+    payBtnDisabled: {
+        backgroundColor: "#ccc",
+        opacity: 0.7,
+    },
+    payText: {
+        color: "white",
+        fontWeight: "bold",
+        fontSize: 15,
+    },
+    empty: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    addressCard: {
+        backgroundColor: '#F8FAFF',
+        padding: 15,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#E3F2FD',
+        marginTop: 10,
+    },
+    addressHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 5,
+    },
+    addressName: {
+        fontWeight: 'bold',
+        fontSize: 16,
+    },
+    addressPhone: {
+        color: '#555',
+        marginBottom: 5,
+    },
+    addressDetail: {
+        color: '#333',
+        marginBottom: 5,
+        lineHeight: 20,
+    },
+    addressType: {
+        fontSize: 12,
+        color: '#666',
+    },
+    defaultBadge: {
+        backgroundColor: COLORS.primary,
+        color: 'white',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 4,
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    noAddressCard: {
+        backgroundColor: '#FFF3E0',
+        padding: 15,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#FFE0B2',
+        marginTop: 10,
+        alignItems: 'center',
+    },
+    noAddressText: {
+        fontWeight: 'bold',
+        color: '#E65100',
+        marginBottom: 5,
+    },
+    noAddressSubtext: {
+        fontSize: 12,
+        color: '#777',
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    addAddressBtn: {
+        backgroundColor: COLORS.primary,
+        paddingHorizontal: 15,
+        paddingVertical: 8,
+        borderRadius: 6,
+    },
+    addAddressText: {
+        color: 'white',
+        fontWeight: '600',
+        fontSize: 14,
+    },
+    changeAddressBtn: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        backgroundColor: '#F0F7FF',
+        borderRadius: 6,
+    },
+    changeAddressText: {
+        color: COLORS.primary,
+        fontSize: 13,
+        fontWeight: '600',
+    },
 });
