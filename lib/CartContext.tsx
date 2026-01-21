@@ -1,21 +1,20 @@
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  writeBatch
+} from "firebase/firestore";
 import React, {
   createContext,
+  ReactNode,
   useContext,
   useEffect,
   useState,
-  ReactNode,
 } from "react";
 import { db } from "../app/firebaseConfig";
-import {
-  doc,
-  setDoc,
-  deleteDoc,
-  updateDoc,
-  getDocs,
-  collection,
-  writeBatch,
-  onSnapshot,
-} from "firebase/firestore";
 import { useAuth } from "./AuthContext";
 
 /* ================== TYPE ================== */
@@ -26,7 +25,7 @@ export type CartItem = {
   price: number;
   quantity: number;
   image?: string;
-  size?: string | null; // ❗ size có thể null, không undefined
+  size?: string | null; // size có thể null, không undefined
 };
 
 /* ================== CONTEXT TYPE ================== */
@@ -69,7 +68,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         const data = d.data() as CartItem;
         return {
           ...data,
-          id: d.id, // luôn overwrite cuối cùng → chuẩn nhất
+          id: d.id,
         };
       });
 
@@ -80,31 +79,29 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   }, [userId]);
 
   /* ===== ADD TO CART ===== */
- const addToCart = async (product: Omit<CartItem, "id" | "quantity">) => {
-  if (!userId) return;
+  const addToCart = async (product: Omit<CartItem, "id" | "quantity">) => {
+    if (!userId) return;
 
-  const sizePart = product.size ? `_${product.size}` : "";
-  const cartId = `${product.productId}${sizePart}`;
+    const sizePart = product.size ? `_${product.size}` : "";
+    const cartId = `${product.productId}${sizePart}`;
 
-  const ref = doc(db, "users", userId, "cart", cartId);
-  const existing = cartItems.find((i) => i.id === cartId);
+    const ref = doc(db, "users", userId, "cart", cartId);
+    const existing = cartItems.find((i) => i.id === cartId);
 
-  if (existing) {
-    await updateDoc(ref, { quantity: existing.quantity + 1 });
-    return; // KHÔNG setCartItems ở đây
-  }
+    if (existing) {
+      await updateDoc(ref, { quantity: existing.quantity + 1 });
+      return;
+    }
 
-  await setDoc(ref, {
-    productId: product.productId,
-    name: product.name,
-    price: product.price,
-    quantity: 1,
-    image: product.image ?? null,
-    size: product.size ?? null,
-  });
-
-  // ❗ Không cần local setCartItems nữa vì onSnapshot sẽ cập nhật
-};
+    await setDoc(ref, {
+      productId: product.productId,
+      name: product.name,
+      price: product.price,
+      quantity: 1,
+      image: product.image ?? null,
+      size: product.size ?? null,
+    });
+  };
 
   /* ===== REMOVE ===== */
   const removeFromCart = async (id: string) => {

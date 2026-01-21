@@ -22,7 +22,8 @@ import { db } from '../app/firebaseConfig';
 import { useCart } from '../lib/CartContext'; // Import CartContext
 import { COLORS } from '../theme/colors';
 
-const API_KEY = ""; // 🔐 Thêm API Key của bạn ở đây
+    // const API_KEY = "AIzaSyAptfDX542QSU_WleUYD8540ZgxFG8oPho";
+const API_KEY = "YOUR_GEMINI_API_KEY_HERE"; // Thay bằng API Key của bạn
 type Product = {
     id: string;
     name: string;

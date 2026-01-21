@@ -1,26 +1,26 @@
-import React, { useEffect, useState } from 'react';
-import {
-    View,
-    Text,
-    StyleSheet,
-    SafeAreaView,
-    ScrollView,
-    TouchableOpacity,
-    Alert
-} from 'react-native';
 import { useRouter } from "expo-router";
 import { MessageCircle } from 'lucide-react-native';
+import React, { useEffect, useState } from 'react';
+import {
+    Alert,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
+} from 'react-native';
 
 // Components
-import { Header } from '../components/Header';
-import { SearchBar } from '../components/SearchBar';
 import { BannerCarousel } from '../components/BannerCarousel';
 import { CategoryGrid } from '../components/CategoryGrid';
+import { Header } from '../components/Header';
 import { ProductGrid } from '../components/ProductGrid';
+import { SearchBar } from '../components/SearchBar';
 
-import { COLORS } from '../theme/colors';
 import { useCart } from '../lib/CartContext';
 import { useNotification } from '../lib/NotificationContext';
+import { COLORS } from '../theme/colors';
 
 // ✅ SERVICE FIRESTORE (đường dẫn của bạn đã đúng)
 import { getAllProducts, ProductData } from '../app/services/productService';
@@ -85,7 +85,7 @@ export default function HomeScreen() {
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <Header title=" Luxe Jewelry" />
+            <Header title=" Luxe Jewelry " />
 
             <SearchBar
                 value={searchText}
@@ -126,6 +126,7 @@ export default function HomeScreen() {
 
             <TouchableOpacity
                 style={styles.chatButton}
+                
                 onPress={() => router.push('/chat')}
                 activeOpacity={0.8}
             >
@@ -165,5 +166,6 @@ const styles = StyleSheet.create({
         shadowRadius: 5,
         elevation: 6,
         zIndex: 100,
+        
     }
 });

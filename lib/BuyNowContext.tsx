@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, ReactNode } from "react";
-import { CartItem } from "./CartContext";
+// lib/BuyNowContext.tsx
+import React, { createContext, ReactNode, useContext, useState } from "react";
+import { CartItem } from "./CartContext"; // Import từ CartContext đã sửa
 
 type BuyNowContextType = {
   buyNowItem: CartItem | null;

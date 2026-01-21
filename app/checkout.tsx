@@ -38,7 +38,7 @@ import { useBuyNow } from "../lib/BuyNowContext";
 import { useCart } from "../lib/CartContext";
 import { useNotification } from "../lib/NotificationContext";
 import { COLORS } from "../theme/colors";
-import { showAlert, showError, showSuccess } from "../utils/alertHelper"; // 👈 THÊM
+import { showAlert, showError, showSuccess } from "../utils/alertHelper";
 
 type Address = {
     id: string;
@@ -80,8 +80,14 @@ export default function CheckoutScreen() {
     }, [params.itemIds]);
 
     // Items cần checkout
-    const checkoutItems = buyNowItem ? [buyNowItem] : cartItems;
+    const checkoutItems = useMemo(() => {
+        if (buyNowItem) return [buyNowItem];
 
+        // Filter chỉ lấy items có id trong selectedItemIds
+        return cartItems.filter(item =>
+            selectedItemIds.includes(item.id)
+        );
+    }, [buyNowItem, cartItems, selectedItemIds]);
     // ===== LOAD ĐỊA CHỈ MẶC ĐỊNH =====
     useEffect(() => {
         if (!user?.uid) return;
@@ -111,7 +117,7 @@ export default function CheckoutScreen() {
         const handleUrl = async (url: string | null) => {
             try {
                 if (!url || !user?.uid) return;
-                
+
                 const urlObj = new URL(url);
                 const status = urlObj.searchParams.get("status");
                 const orderCodeParam = urlObj.searchParams.get("orderCode");
@@ -190,7 +196,7 @@ export default function CheckoutScreen() {
     const subtotal = checkoutItems.reduce((sum, item) => {
         return sum + (Number(item.price) || 0) * (Number(item.quantity) || 1);
     }, 0);
-    const shippingFee = 30000;
+    const shippingFee = 1000;
     const total = subtotal + shippingFee;
 
     const formatPrice = (price: number) => price.toLocaleString("vi-VN") + "₫";
@@ -444,7 +450,7 @@ export default function CheckoutScreen() {
                 <View style={styles.section}>
                     <View style={styles.row}>
                         <Text style={styles.sectionTitle}>📍 Địa chỉ giao hàng</Text>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                             onPress={() => router.push('/addresses')}
                             style={styles.changeAddressBtn}
                         >
@@ -472,7 +478,7 @@ export default function CheckoutScreen() {
                             <Text style={styles.noAddressSubtext}>
                                 Sẽ dùng "Địa chỉ mẫu" nếu bạn không thêm địa chỉ
                             </Text>
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={styles.addAddressBtn}
                                 onPress={() => router.push('/addresses')}
                             >

@@ -1,17 +1,17 @@
-import 'react-native-reanimated'; 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet, useColorScheme } from 'react-native';
+import { useEffect, useState } from 'react';
+import { StyleSheet, useColorScheme, View } from 'react-native';
+import 'react-native-reanimated';
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useState, useEffect } from 'react';
 
+import { AuthProvider } from '../lib/AuthContext';
+import { BuyNowProvider } from '../lib/BuyNowContext';
 import { CartProvider } from '../lib/CartContext';
 import { NotificationProvider } from '../lib/NotificationContext';
 import { WishlistProvider } from '../lib/WishlistContext';
-import { AuthProvider } from '../lib/AuthContext';
-import { BuyNowProvider } from '../lib/BuyNowContext';  // 🔥 THÊM
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -32,11 +32,9 @@ export default function RootLayout() {
           <NotificationProvider>
             <CartProvider>
               <WishlistProvider>
-                <BuyNowProvider> {/* 🔥 WRAP THÊM */}
-
+                <BuyNowProvider>
                   <View style={styles.container}>
                     <Stack>
-                      {/* ⚠ KHÔNG set initialRouteName để expo-router auto */}
                       {isFirstLaunch && (
                         <Stack.Screen name="welcome" options={{ headerShown: false }} />
                       )}
@@ -44,9 +42,7 @@ export default function RootLayout() {
                       <Stack.Screen name="SignupScreen" options={{ headerShown: false }} />
                       <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
                       <Stack.Screen name="home" options={{ headerShown: false }} />
-
                       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-
                       <Stack.Screen name="cart" options={{ headerShown: false }} />
                       <Stack.Screen name="checkout" options={{ headerShown: false }} />
                       <Stack.Screen name="productdetail" options={{ headerShown: false }} />
@@ -60,17 +56,15 @@ export default function RootLayout() {
                       <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
                       <Stack.Screen name="chat" options={{ headerShown: false }} />
                       <Stack.Screen name="search" options={{ headerShown: false }} />
-                      <Stack.Screen name="admin/orders" options={{ headerShown: false }} />
-
-                      <Stack.Screen
-                        name="modal"
-                        options={{ presentation: 'modal', headerShown: false }}
-                      />
+                      
+                      {/* 👇 SỬA TỪ "admin/orders" THÀNH "admin/order" */}
+                      <Stack.Screen name="admin/order" options={{ headerShown: false }} />
+                      
+                      <Stack.Screen name="modal" options={{ presentation: 'modal', headerShown: false }} />
+                      <Stack.Screen name="orderdetail/[orderId]" options={{ headerShown: false }} />
                     </Stack>
+                    <StatusBar style="auto" />
                   </View>
-
-                  <StatusBar style="auto" />
-
                 </BuyNowProvider>
               </WishlistProvider>
             </CartProvider>

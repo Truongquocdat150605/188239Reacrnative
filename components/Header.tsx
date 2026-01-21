@@ -1,19 +1,19 @@
+import { useRouter } from 'expo-router';
+import { ArrowLeft, Bell, ShoppingCart } from 'lucide-react-native';
 import React from 'react';
 import {
-    View,
+    Image,
+    SafeAreaView,
+    StyleSheet,
     Text,
     TouchableOpacity,
-    StyleSheet,
-    SafeAreaView,
-    Image
+    View
 } from 'react-native';
-import { ShoppingCart, Bell, ArrowLeft } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
 import { COLORS } from '../theme/colors';
 
 // 🔥 CONTEXT
-import { useNotification } from '../lib/NotificationContext';
 import { useCart } from '../lib/CartContext';
+import { useNotification } from '../lib/NotificationContext';
 
 // ================== TYPES ==================
 type HeaderProps = {
